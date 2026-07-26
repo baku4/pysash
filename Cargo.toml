@@ -2,5 +2,10 @@
 name = "pysash"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.95"
 
 [dependencies]
+ruff_python_parser = "=0.0.6"
+ruff_python_ast = "=0.0.6"
+ruff_text_size = "=0.0.6"
+blake3 = "1"
