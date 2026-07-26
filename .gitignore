@@ -4,3 +4,8 @@ Cargo.lock
 
 # macOS
 .DS_Store
+
+# Docs & Agent
+CLAUDE.md
+Architecture.md
+Design.md
