@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use super::{Diagnostic, SourceMode, Statement};
+use super::Statement;
 
 /// 파싱된 Python 소스.
 ///
@@ -12,9 +12,7 @@ use super::{Diagnostic, SourceMode, Statement};
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PythonSource {
     raw: Arc<[u8]>,
-    mode: SourceMode,
     statements: Arc<[Statement]>,
-    diagnostics: Arc<[Diagnostic]>,
 }
 
 mod parse;

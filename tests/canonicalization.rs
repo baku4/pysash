@@ -4,7 +4,6 @@
 //! 불필요한 재실행이 되어 그냥 느릴 뿐이다. 그래서 "같다"로 판정하는 목록보다
 //! "다르다"로 판정하는 목록이 더 중요하다.
 
-use pysash::SourceMode;
 use pysash::canonical_statement::CanonicalStatement;
 use pysash::python_source::PythonSource;
 
@@ -129,20 +128,4 @@ fn docstring_position_changes_identity() {
         as_docstring.statements()[0].canonical,
         as_plain_expression.statements()[1].canonical
     );
-}
-
-/// `%timeit`은 IPython 모드에서만 statement다. 같은 바이트열이라도 모드가 다르면
-/// 다른 statement다.
-#[test]
-fn source_mode_changes_identity() {
-    let ipython = PythonSource::parse_bytes(b"x = 1\n", SourceMode::Ipython).unwrap();
-    let python = PythonSource::parse_bytes(b"x = 1\n", SourceMode::Python).unwrap();
-    assert_ne!(
-        ipython.statements()[0].canonical,
-        python.statements()[0].canonical
-    );
-
-    let magic = PythonSource::parse_bytes(b"%timeit x\n", SourceMode::Ipython).unwrap();
-    assert_eq!(magic.statements().len(), 1);
-    assert!(PythonSource::parse_bytes(b"%timeit x\n", SourceMode::Python).is_err());
 }

@@ -5,9 +5,7 @@ use ruff_text_size::Ranged;
 use crate::canonical_statement::CanonicalStatement;
 use crate::parse_error::{ParseError, ParseErrorKind};
 use crate::range::Range;
-use crate::source_mode::SourceMode;
 use crate::statement::Statement;
-use crate::statement_facts::StatementFacts;
 use super::PythonSource;
 use super::canonicalize::encode;
 use super::decode::decode;
@@ -15,18 +13,14 @@ use super::decode::decode;
 impl PythonSource {
     /// UTF-8 문자열을 Python 소스로 읽는다.
     pub fn parse(source: &str) -> Result<Self, ParseError> {
-        Self::parse_bytes(source.as_bytes(), SourceMode::Python)
+        Self::parse_bytes(source.as_bytes())
     }
 
-    /// 바이트열을 지정한 모드로 읽는다. 문법적으로 파싱 가능하지 않으면 실패한다.
-    pub fn parse_bytes(source: &[u8], mode: SourceMode) -> Result<Self, ParseError> {
+    /// 바이트열을 Python 소스로 읽는다. 문법적으로 파싱 가능하지 않으면 실패한다.
+    pub fn parse_bytes(source: &[u8]) -> Result<Self, ParseError> {
         let (text, base) = decode(source)?;
-        let source_type = match mode {
-            SourceMode::Python => PySourceType::Python,
-            SourceMode::Ipython => PySourceType::Ipynb,
-        };
 
-        let parsed = parse_unchecked_source(text, source_type);
+        let parsed = parse_unchecked_source(text, PySourceType::Python);
         if let Some(error) = parsed.errors().first() {
             return Err(ParseError {
                 range: shift(
@@ -43,19 +37,16 @@ impl PythonSource {
         let body = &parsed.syntax().body;
         let mut statements = Vec::with_capacity(body.len());
         for (index, stmt) in body.iter().enumerate() {
-            let encoding = encode(stmt, index == 0 && is_bare_string(stmt), mode);
+            let encoding = encode(stmt, index == 0 && is_bare_string(stmt));
             statements.push(Statement {
                 range: shift(stmt.start().into(), stmt.end().into(), base),
                 canonical: CanonicalStatement::from_encoding(encoding),
-                facts: StatementFacts::default(),
             });
         }
 
         Ok(PythonSource {
             raw: Arc::from(source),
-            mode,
             statements: Arc::from(statements),
-            diagnostics: Arc::from([]),
         })
     }
 }

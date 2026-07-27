@@ -1,6 +1,4 @@
-use crate::diagnostic::Diagnostic;
 use crate::range::Range;
-use crate::source_mode::SourceMode;
 use crate::statement::Statement;
 use super::PythonSource;
 
@@ -10,17 +8,9 @@ impl PythonSource {
         &self.raw
     }
 
-    pub fn mode(&self) -> SourceMode {
-        self.mode
-    }
-
     /// 소스에 나타난 순서 그대로의 top-level statement 목록.
     pub fn statements(&self) -> &[Statement] {
         &self.statements
-    }
-
-    pub fn diagnostics(&self) -> &[Diagnostic] {
-        &self.diagnostics
     }
 
     /// `range`가 가리키는 원본 바이트. 범위를 벗어나면 잘려 나간다.

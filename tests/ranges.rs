@@ -1,7 +1,7 @@
 //! `Range`는 사용자가 준 **원본 바이트열** 기준이어야 한다. 이게 어긋나면 잘라낸
 //! 코드를 인터프리터에 먹일 수 없다.
 
-use pysash::{ParseErrorKind, Range, SourceMode};
+use pysash::{ParseErrorKind, Range};
 use pysash::python_source::PythonSource;
 
 fn ranges(source: &str) -> Vec<(u32, u32)> {
@@ -65,8 +65,6 @@ fn raw_bytes_are_preserved_verbatim() {
     let parsed = PythonSource::parse(source).unwrap();
 
     assert_eq!(parsed.raw(), source.as_bytes());
-    assert_eq!(parsed.mode(), SourceMode::Python);
-    assert!(parsed.diagnostics().is_empty());
 }
 
 #[test]
@@ -86,7 +84,7 @@ fn syntax_errors_are_the_only_failure_of_parsing() {
 
 #[test]
 fn non_utf8_input_is_rejected() {
-    let error = PythonSource::parse_bytes(b"x = '\xff'\n", SourceMode::Python).unwrap_err();
+    let error = PythonSource::parse_bytes(b"x = '\xff'\n").unwrap_err();
     assert!(matches!(error.kind, ParseErrorKind::NotUtf8 { offset: 5 }));
 }
 
