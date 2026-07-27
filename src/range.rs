@@ -12,16 +12,4 @@ impl Range {
     pub fn new(start: u32, end: u32) -> Self {
         Self { start, end }
     }
-
-    pub fn len(&self) -> u32 {
-        self.end.saturating_sub(self.start)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.end <= self.start
-    }
-
-    pub fn contains(&self, offset: u32) -> bool {
-        self.start <= offset && offset < self.end
-    }
 }

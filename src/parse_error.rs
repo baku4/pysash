@@ -6,8 +6,8 @@ use super::Range;
 /// 소스를 `PythonSource`로 만들지 못한 이유.
 ///
 /// 이 crate에서 `Err`가 되는 유일한 것이다. 파싱이 깨지면 statement가 하나도 없어
-/// 정렬할 대상 자체가 없기 때문이다. 그 밖의 모든 "못 봤다 / 가정했다"는
-/// [`Diagnostic`](super::Diagnostic)으로 보고하며 plan 생성을 막지 않는다.
+/// 정렬할 대상 자체가 없기 때문이다. 정렬은 실패하지 않는다 — 전부 다시 실행하라는
+/// 것도 유효한 계획이다.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ParseError {
     pub range: Range,

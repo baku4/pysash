@@ -38,14 +38,6 @@ impl CanonicalStatement {
             encoding: encoding.into_boxed_slice(),
         }
     }
-
-    pub fn digest(&self) -> &[u8; 32] {
-        &self.digest
-    }
-
-    pub fn encoding(&self) -> &[u8] {
-        &self.encoding
-    }
 }
 
 impl PartialEq for CanonicalStatement {

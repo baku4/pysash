@@ -38,8 +38,7 @@ fn architecture_example_three_forms_are_one_statement() {
 
     assert_eq!(a, b);
     assert_eq!(b, c);
-    assert_eq!(a.digest(), b.digest());
-    assert_eq!(a.encoding(), c.encoding());
+    assert_eq!(a, c);
 }
 
 #[test]
