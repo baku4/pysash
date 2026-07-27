@@ -22,4 +22,10 @@ pub mod canonical_statement;
 mod statement;
 pub use statement::Statement;
 
+mod decision_reason;
+pub use decision_reason::{Action, DecisionReason};
+
+mod alignment_plan;
+pub use alignment_plan::{AlignmentPlan, Step};
+
 pub mod python_source;
