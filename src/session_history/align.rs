@@ -1,41 +1,47 @@
 use crate::alignment_plan::{AlignmentPlan, Step};
 use crate::decision_reason::{Action, DecisionReason};
 use crate::python_source::PythonSource;
+use crate::statement::Statement;
 use super::SessionHistory;
-use super::prefix::prefix_len;
+use super::overlap::overlap_len;
 
 impl SessionHistory {
-    /// 이 소스를 실현하려면 무엇을 재사용하고 무엇을 다시 실행해야 하는가.
+    /// 이 소스를 실행하려면 무엇을 재사용하고 무엇을 다시 실행해야 하는가.
     ///
-    /// 세션을 바꾸지 않으며 실패하지 않는다 — 최악의 답인 전면 Run도 유효한
+    /// 세션을 바꾸지 않으며 실패하지 않는다 — 전부 다시 실행하라는 것도 유효한
     /// 계획이기 때문이다.
     ///
-    /// 재사용의 근거는 세션의 앞부분이 이 소스의 앞부분과 canonical하게 같다는
-    /// 것뿐이다. 같다면 그 실행들은 같은 프로그램을 같은 순서로 같은 시작
-    /// 상태에서 실행한 것이므로, 값이 같음을 따로 증명할 필요가 없다 — 문자
-    /// 그대로 그 실행이다.
+    /// 재사용의 근거는 하나뿐이다: **세션의 끝이 이 소스의 앞과 이어진다.** 세션의
+    /// 마지막 `m`개가 이 소스의 첫 `m`개와 같으면 그 `m`개는 방금 이 소스를 그만큼
+    /// 실행한 것이고 그 뒤에 아무 일도 없었다. 그러므로 나머지를 순서대로 실행하면
+    /// 이 소스를 통째로 실행한 것과 같은 상태가 된다.
     ///
-    /// 세션이 그 prefix 밖에서 무언가를 더 실행했다면 그것이 무엇을 망가뜨렸는지
-    /// 알 방법이 아직 없다. 그래서 전부 다시 실행한다. 잘못된 재사용은 조용히
-    /// 틀린 결과가 되고 불필요한 재실행은 그냥 느릴 뿐이므로, 모르는 쪽은 언제나
-    /// Run이다.
+    /// 세션이 이 소스와 갈라진 뒤에도 계속 실행했다면 꼬리가 이어지지 않으므로
+    /// 재사용이 없다. 되돌릴 수 없는 실행 위에서 그보다 나은 답은 없다.
     pub fn align(&self, code: &PythonSource) -> AlignmentPlan {
+        let session: Vec<&Statement> = self
+            .sources
+            .iter()
+            .flat_map(|source| source.statements())
+            .collect();
         let statements = code.statements();
-        let common = prefix_len(&self.realized, statements);
-        let session_went_further = self.realized.len() > common;
-        let disturbed = session_went_further || !self.residue.is_empty();
+
+        // 판정: 세션의 끝과 소스의 앞이 겹치는 만큼.
+        let reused = overlap_len(&session, statements);
+        // 이유 라벨링에만 쓴다: 세션이 이 소스와 앞에서부터 갈라지는 자리.
+        let diverged_at = session
+            .iter()
+            .zip(statements)
+            .take_while(|(a, b)| a.canonical == b.canonical)
+            .count();
 
         let steps = statements
             .iter()
             .enumerate()
             .map(|(index, statement)| {
-                let (action, reason) = if index < common {
-                    if disturbed {
-                        (Action::Run, DecisionReason::DependencyChanged)
-                    } else {
-                        (Action::Reuse, DecisionReason::ReusableExecution)
-                    }
-                } else if index == common && session_went_further {
+                let (action, reason) = if index < reused {
+                    (Action::Reuse, DecisionReason::ReusableExecution)
+                } else if index == diverged_at && diverged_at < session.len() {
                     (Action::Run, DecisionReason::StatementChanged)
                 } else {
                     (Action::Run, DecisionReason::NoMatchingExecution)
