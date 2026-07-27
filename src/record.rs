@@ -1,5 +1,5 @@
-use crate::python_source::PythonSource;
 use super::SessionHistory;
+use super::python_source::PythonSource;
 
 impl SessionHistory {
     pub fn new() -> Self {

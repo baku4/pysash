@@ -1,8 +1,8 @@
 //! `cargo run --example align`
 
 use pysash::Action;
+use pysash::SessionHistory;
 use pysash::python_source::PythonSource;
-use pysash::session_history::SessionHistory;
 
 fn main() {
     println!("=== 이어붙이기 ===");

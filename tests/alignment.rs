@@ -2,8 +2,7 @@
 //! 확인하는 테스트가 더 중요하다.
 
 use pysash::python_source::PythonSource;
-use pysash::session_history::SessionHistory;
-use pysash::{Action, DecisionReason};
+use pysash::{Action, DecisionReason, SessionHistory};
 
 fn source(text: &str) -> PythonSource {
     PythonSource::parse(text).unwrap_or_else(|e| panic!("{text:?}: {e}"))
