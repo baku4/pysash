@@ -1,4 +1,4 @@
-use crate::alignment_plan::{AlignmentPlan, Step};
+use crate::alignment_plan::{AlignmentPlan, StatementPlan};
 use crate::decision_reason::{Action, DecisionReason};
 use crate::python_source::PythonSource;
 use crate::statement::Statement;
@@ -35,7 +35,7 @@ impl SessionHistory {
             .take_while(|(a, b)| a.canonical == b.canonical)
             .count();
 
-        let steps = statements
+        let plans = statements
             .iter()
             .enumerate()
             .map(|(index, statement)| {
@@ -47,7 +47,7 @@ impl SessionHistory {
                     (Action::Run, DecisionReason::NoMatchingExecution)
                 };
 
-                Step {
+                StatementPlan {
                     index,
                     range: statement.range,
                     action,
@@ -56,6 +56,6 @@ impl SessionHistory {
             })
             .collect();
 
-        AlignmentPlan { steps }
+        AlignmentPlan { plans }
     }
 }

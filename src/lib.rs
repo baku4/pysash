@@ -27,7 +27,7 @@ mod decision_reason;
 pub use decision_reason::{Action, DecisionReason};
 
 mod alignment_plan;
-pub use alignment_plan::{AlignmentPlan, Step};
+pub use alignment_plan::{AlignmentPlan, StatementPlan};
 
 pub mod python_source;
 

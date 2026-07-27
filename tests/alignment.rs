@@ -17,21 +17,31 @@ fn session(pushed: &[&str]) -> SessionHistory {
     history
 }
 
+/// 다시 실행하지 않아도 되는 statement 수.
+fn reused(plan: &pysash::AlignmentPlan) -> usize {
+    plan.plans.len() - plan.run_plans().count()
+}
+
+/// 할 일이 하나도 없다.
+fn nothing_to_run(plan: &pysash::AlignmentPlan) -> bool {
+    plan.run_plans().next().is_none()
+}
+
 fn actions(history: &SessionHistory, code: &str) -> Vec<Action> {
     history
         .align(&source(code))
-        .steps
+        .plans
         .iter()
-        .map(|step| step.action)
+        .map(|plan| plan.action)
         .collect()
 }
 
 fn reasons(history: &SessionHistory, code: &str) -> Vec<DecisionReason> {
     history
         .align(&source(code))
-        .steps
+        .plans
         .iter()
-        .map(|step| step.reason)
+        .map(|plan| plan.reason)
         .collect()
 }
 
@@ -71,8 +81,8 @@ fn re_aligning_the_same_source_reuses_everything() {
     let history = session(&["x = 1\ny = 2\n"]);
     let plan = history.align(&source("x = 1\ny = 2\n"));
 
-    assert!(plan.is_full_reuse());
-    assert_eq!(plan.reused_count(), 2);
+    assert!(nothing_to_run(&plan));
+    assert_eq!(reused(&plan), 2);
 }
 
 /// 공백과 주석은 statement의 정체성이 아니므로 재사용을 막지 않는다.
@@ -80,11 +90,9 @@ fn re_aligning_the_same_source_reuses_everything() {
 fn trivia_does_not_break_reuse() {
     let history = session(&["x = 1000\n"]);
 
-    assert!(
-        history
-            .align(&source("x = 1_000  # comment\n"))
-            .is_full_reuse()
-    );
+    assert!(nothing_to_run(
+        &history.align(&source("x = 1_000  # comment\n"))
+    ));
 }
 
 #[test]
@@ -105,7 +113,7 @@ fn a_source_that_does_not_continue_the_session_runs_entirely() {
     let history = session(&["x = 1\ny = 2\nz = 3\n"]);
     let plan = history.align(&source("x = 1\ny = 2\nz = 99\n"));
 
-    assert_eq!(plan.reused_count(), 0);
+    assert_eq!(reused(&plan), 0);
     assert_eq!(
         reasons(&history, "x = 1\ny = 2\nz = 99\n"),
         [
@@ -184,11 +192,11 @@ fn the_edit_loop_converges_by_pushing_what_ran() {
     let mut history = session(&["x = 1\ny = 2\nz = 3\n"]);
     let edited = source("x = 1\ny = 2\nz = 99\n");
 
-    assert_eq!(history.align(&edited).reused_count(), 0);
+    assert_eq!(reused(&history.align(&edited)), 0);
 
     history.push(&edited);
 
-    assert!(history.align(&edited).is_full_reuse());
+    assert!(nothing_to_run(&history.align(&edited)));
 }
 
 /// Run은 언제나 소스의 뒤쪽 연속 구간이므로, 그 구간의 바이트만 잘라 실행하고
@@ -199,7 +207,7 @@ fn the_run_suffix_can_be_sliced_and_recorded() {
     let code = source("x = 1\ny = 2\nz = 3\n");
 
     let plan = history.align(&code);
-    let first_run = plan.run_steps().next().expect("실행할 것이 있다");
+    let first_run = plan.run_plans().next().expect("실행할 것이 있다");
     assert_eq!(first_run.index, 1);
 
     let tail = &code.raw()[first_run.range.start as usize..];
@@ -207,7 +215,7 @@ fn the_run_suffix_can_be_sliced_and_recorded() {
 
     history.push(&source(str::from_utf8(tail).unwrap()));
 
-    assert!(history.align(&code).is_full_reuse());
+    assert!(nothing_to_run(&history.align(&code)));
 }
 
 /// 알려진 한계: 잘라낸 조각의 첫 statement가 bare string이면 재파싱할 때
@@ -220,12 +228,12 @@ fn slicing_a_run_suffix_that_starts_with_a_bare_string_loses_reuse() {
 
     let first_run = history
         .align(&code)
-        .run_steps()
+        .run_plans()
         .next()
         .expect("실행할 것이 있다")
         .range;
     let tail = &code.raw()[first_run.start as usize..];
     history.push(&source(str::from_utf8(tail).unwrap()));
 
-    assert_eq!(history.align(&code).reused_count(), 0);
+    assert_eq!(reused(&history.align(&code)), 0);
 }
