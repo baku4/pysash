@@ -11,6 +11,49 @@
 //!
 //! 잘못된 재사용은 조용히 틀린 결과이고 불필요한 재실행은 낭비일 뿐이다. 이 비대칭이
 //! 이 crate 전반의 판정 기준이다 — 애매하면 언제나 다시 실행한다.
+//!
+//! # 쓰는 법
+//!
+//! ```
+//! use pysash::{Action, DecisionReason, SessionHistory};
+//! use pysash::python_source::PythonSource;
+//!
+//! // 1. REPL에 입력하듯, 실제로 성공한 실행만 순서대로 밀어 넣는다.
+//! let mut history = SessionHistory::new();
+//! history.push(&PythonSource::parse("import math\nr = 2.0\n")?);
+//!
+//! // 2. 뒤에 한 줄을 이어 붙인 소스를 준다.
+//! let grown = PythonSource::parse("import math\nr = 2.0\narea = math.pi * r ** 2\n")?;
+//! let plan = history.align(&grown);
+//!
+//! // 앞 두 줄은 세션이 방금 실행한 바로 그것이다. 다시 돌리지 않는다.
+//! let actions: Vec<Action> = plan.plans.iter().map(|p| p.action).collect();
+//! assert_eq!(actions, [Action::Reuse, Action::Reuse, Action::Run]);
+//!
+//! // 3. Run인 것만 위에서 아래로 실행한다. 실행은 이 crate 밖의 일이다.
+//! for entry in plan.run_plans() {
+//!     let _source_text = std::str::from_utf8(grown.slice(entry.range)).unwrap();
+//! }
+//!
+//! // 4. 실행한 것만 기록한다. Run은 언제나 소스의 뒤쪽 연속 구간이다.
+//! history.push(&PythonSource::parse("area = math.pi * r ** 2\n")?);
+//! assert!(history.align(&grown).run_plans().next().is_none());
+//!
+//! // 5. 이제 가운데 줄을 고쳐서 다시 준다.
+//! let edited = PythonSource::parse("import math\nr = 3.0\narea = math.pi * r ** 2\n")?;
+//! let plan = history.align(&edited);
+//!
+//! // 세션의 끝이 이 소스의 앞과 이어지지 않는다 — 전부 다시 실행한다.
+//! // 되돌릴 수 없는 실행 위에서 이보다 나은 답은 없다.
+//! assert_eq!(plan.run_plans().count(), 3);
+//! assert_eq!(plan.plans[1].reason, DecisionReason::StatementChanged);
+//!
+//! // 6. 실행하고 기록하면 루프는 그 자리에서 수렴한다.
+//! //    영구히 못 쓰게 되는 세션은 없다.
+//! history.push(&edited);
+//! assert!(history.align(&edited).run_plans().next().is_none());
+//! # Ok::<(), pysash::ParseError>(())
+//! ```
 
 mod range;
 pub use range::Range;
