@@ -29,3 +29,5 @@ mod alignment_plan;
 pub use alignment_plan::{AlignmentPlan, Step};
 
 pub mod python_source;
+
+pub mod session_history;
