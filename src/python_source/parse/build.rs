@@ -9,6 +9,7 @@ use crate::statement::Statement;
 use super::PythonSource;
 use super::canonicalize::encode;
 use super::decode::decode;
+use super::facts::extract;
 
 impl PythonSource {
     /// UTF-8 문자열을 Python 소스로 읽는다.
@@ -41,6 +42,7 @@ impl PythonSource {
             statements.push(Statement {
                 range: shift(stmt.start().into(), stmt.end().into(), base),
                 canonical: CanonicalStatement::from_encoding(encoding),
+                facts: extract(stmt),
             });
         }
 

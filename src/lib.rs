@@ -35,22 +35,23 @@
 //!     let _source_text = std::str::from_utf8(grown.slice(entry.range)).unwrap();
 //! }
 //!
-//! // 4. 실행한 것만 기록한다. Run은 언제나 소스의 뒤쪽 연속 구간이다.
-//! history.push(&PythonSource::parse("area = math.pi * r ** 2\n")?);
+//! // 4. 계획을 실행 완료했으면 realize로 기록한다. 이제 이 소스가 실현 열이다.
+//! history.realize(&grown);
 //! assert!(history.align(&grown).run_plans().next().is_none());
 //!
 //! // 5. 이제 가운데 줄을 고쳐서 다시 준다.
 //! let edited = PythonSource::parse("import math\nr = 3.0\narea = math.pi * r ** 2\n")?;
 //! let plan = history.align(&edited);
 //!
-//! // 세션의 끝이 이 소스의 앞과 이어지지 않는다 — 전부 다시 실행한다.
-//! // 되돌릴 수 없는 실행 위에서 이보다 나은 답은 없다.
-//! assert_eq!(plan.run_plans().count(), 3);
+//! // import는 그대로 재사용된다 — 그 뒤의 어떤 실행도 math를 건드리지 않았다.
+//! // r부터는 다시 실행한다. 편집 지점 아래는 전부 낡았기 때문이다.
+//! let actions: Vec<Action> = plan.plans.iter().map(|p| p.action).collect();
+//! assert_eq!(actions, [Action::Reuse, Action::Run, Action::Run]);
 //! assert_eq!(plan.plans[1].reason, DecisionReason::StatementChanged);
 //!
-//! // 6. 실행하고 기록하면 루프는 그 자리에서 수렴한다.
+//! // 6. 실행하고 realize하면 루프는 그 자리에서 수렴한다.
 //! //    영구히 못 쓰게 되는 세션은 없다.
-//! history.push(&edited);
+//! history.realize(&edited);
 //! assert!(history.align(&edited).run_plans().next().is_none());
 //! # Ok::<(), pysash::ParseError>(())
 //! ```
@@ -58,8 +59,17 @@
 mod range;
 pub use range::Range;
 
+mod effect;
+pub use effect::Effect;
+
 mod parse_error;
 pub use parse_error::{ParseError, ParseErrorKind};
+
+mod diagnostic;
+pub use diagnostic::Diagnostic;
+
+mod statement_facts;
+pub use statement_facts::{CalleeSummary, StatementFacts};
 
 pub mod canonical_statement;
 
@@ -67,6 +77,10 @@ mod statement;
 pub use statement::Statement;
 
 pub mod python_source;
+
+mod trace;
+mod def_use;
+mod summaries;
 
 /// 지금까지 성공적으로 실행된 것의 선형 기록.
 ///
@@ -82,12 +96,23 @@ pub struct SessionHistory {
     /// 잘라볼 대상도 함께 사라진다. `PythonSource`는 전부 `Arc` 백업이라 보관
     /// 비용이 O(1)이다.
     sources: Vec<python_source::PythonSource>,
+    /// 현재 "실현된" 선형 실행 열. 마지막 align의 소스를 그대로 실행한 상태라고
+    /// 세션이 믿는 구간이다.
+    realized: Vec<trace::ExecRef>,
+    /// 실현 열 밖으로 밀려난 실행들. 효과는 남아 있지만 더 이상 어떤 소스의
+    /// 실행으로도 세지 않는다. 오염 집합의 재료다.
+    residue: Vec<trace::ExecRef>,
+    /// 이름 사이의 연결 — 살아 있는 이름과 별칭 클래스.
+    graph: def_use::DefUseGraph,
+    /// 세션에 정의된 callable들의 요약.
+    summaries: summaries::SummaryTable,
+    /// 부분 실행 등으로 세션 상태를 더는 신뢰할 수 없다.
+    poisoned: bool,
 }
 
-mod decision_reason;
-pub use decision_reason::{Action, DecisionReason};
 mod alignment_plan;
-pub use alignment_plan::{AlignmentPlan, StatementPlan};
+pub use alignment_plan::{Action, AlignmentPlan, DecisionReason, PlanSummary, StatementPlan};
 
 mod record;
 mod align;
+mod inspect;
