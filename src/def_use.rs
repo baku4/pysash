@@ -1,22 +1,22 @@
-use std::collections::HashMap;
 use super::StatementFacts;
 
 /// 이름 사이의 연결 기억 — 지금 어떤 이름이 살아 있고, 어떤 이름들이 같은 객체를
 /// 가리킬 수 있는가.
 ///
-/// 별칭 클래스는 늘어나기만 한다. 한 번이라도 `b = a`였다면 그 뒤로 b를 통한
-/// 변경이 a에 보였을 수 있기 때문에, 별칭을 푸는 안전한 방법은 없다.
+/// 별칭 간선은 생긴 실행 순번과 함께 쌓이기만 한다. 폐포는 언제나 "그 시점까지
+/// 존재한 간선"으로만 계산한다 — 나중에 생긴 별칭이 그 전에 일어난 변경을 소급해서
+/// 전파하면, 이미 지나간 실행의 오염이 부풀어 편집 루프가 수렴하지 않는다.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct DefUseGraph {
     /// 현재 바인딩되어 있는 이름들. 바인딩 순서를 유지한다.
     live: Vec<String>,
-    /// union-find의 parent 포인터. 키에 없는 이름은 자기 자신이 뿌리다.
-    parents: HashMap<String, String>,
+    /// 별칭 간선과 그것이 생긴 실행 순번.
+    edges: Vec<(String, String, usize)>,
 }
 
 impl DefUseGraph {
     /// 실행 하나가 남긴 바인딩·삭제·별칭을 기록한다.
-    pub fn record(&mut self, facts: &StatementFacts) {
+    pub fn record(&mut self, facts: &StatementFacts, seq: usize) {
         for name in &facts.binds {
             if !self.live.iter().any(|live| **live == **name) {
                 self.live.push(name.to_string());
@@ -26,7 +26,7 @@ impl DefUseGraph {
             self.live.retain(|live| **live != **name);
         }
         for (left, right) in &facts.alias_edges {
-            self.union(left, right);
+            self.edges.push((left.to_string(), right.to_string(), seq));
         }
     }
 
@@ -34,36 +34,29 @@ impl DefUseGraph {
         self.live.iter().map(String::as_str)
     }
 
-    /// 주어진 이름들과 별칭 클래스가 겹치는 이름을 전부 추가한다.
-    pub fn alias_closure(&self, names: &mut Vec<String>) {
-        let roots: Vec<String> = names.iter().map(|name| self.find(name)).collect();
-        for name in self.parents.keys() {
-            if roots.contains(&self.find(name)) && !names.iter().any(|n| n == name) {
-                names.push(name.clone());
+    /// `before` 이전에 존재한 별칭 간선만으로, 주어진 이름들과 같은 객체를 가리킬
+    /// 수 있는 이름을 전부 추가한다.
+    pub fn alias_closure(&self, names: &mut Vec<String>, before: usize) {
+        loop {
+            let mut grew = false;
+            for (left, right, seq) in &self.edges {
+                if *seq >= before {
+                    continue;
+                }
+                let has_left = names.iter().any(|name| name == left);
+                let has_right = names.iter().any(|name| name == right);
+                if has_left && !has_right {
+                    names.push(right.clone());
+                    grew = true;
+                } else if has_right && !has_left {
+                    names.push(left.clone());
+                    grew = true;
+                }
             }
-        }
-    }
-
-    fn union(&mut self, left: &str, right: &str) {
-        let left_root = self.find(left);
-        let right_root = self.find(right);
-        if left_root != right_root {
-            self.parents.insert(left_root, right_root.clone());
-        }
-        // 간선의 양 끝을 키로 등록해 둬야 closure가 이 이름들을 순회할 수 있다.
-        self.parents.entry(left.to_string()).or_insert_with(|| right_root.clone());
-        self.parents.entry(right.to_string()).or_insert(right_root);
-    }
-
-    fn find(&self, name: &str) -> String {
-        let mut current = name;
-        while let Some(parent) = self.parents.get(current) {
-            if parent == current {
+            if !grew {
                 break;
             }
-            current = parent;
         }
-        current.to_string()
     }
 }
 
@@ -91,9 +84,9 @@ mod tests {
     #[test]
     fn live_names_follow_binds_and_deletes() {
         let mut graph = DefUseGraph::default();
-        graph.record(&facts(&["x"], &[], &[]));
-        graph.record(&facts(&["y"], &[], &[]));
-        graph.record(&facts(&[], &["x"], &[]));
+        graph.record(&facts(&["x"], &[], &[]), 0);
+        graph.record(&facts(&["y"], &[], &[]), 1);
+        graph.record(&facts(&[], &["x"], &[]), 2);
         let live: Vec<&str> = graph.live_names().collect();
         assert_eq!(live, ["y"]);
     }
@@ -101,10 +94,10 @@ mod tests {
     #[test]
     fn alias_closure_is_transitive() {
         let mut graph = DefUseGraph::default();
-        graph.record(&facts(&["b"], &[], &[("b", "a")]));
-        graph.record(&facts(&["c"], &[], &[("c", "b")]));
+        graph.record(&facts(&["b"], &[], &[("b", "a")]), 0);
+        graph.record(&facts(&["c"], &[], &[("c", "b")]), 1);
         let mut names = vec!["a".to_string()];
-        graph.alias_closure(&mut names);
+        graph.alias_closure(&mut names, 10);
         names.sort_unstable();
         assert_eq!(names, ["a", "b", "c"]);
     }
@@ -112,11 +105,21 @@ mod tests {
     #[test]
     fn unrelated_names_stay_out_of_the_closure() {
         let mut graph = DefUseGraph::default();
-        graph.record(&facts(&["b"], &[], &[("b", "a")]));
-        graph.record(&facts(&["d"], &[], &[("d", "c")]));
+        graph.record(&facts(&["b"], &[], &[("b", "a")]), 0);
+        graph.record(&facts(&["d"], &[], &[("d", "c")]), 1);
         let mut names = vec!["a".to_string()];
-        graph.alias_closure(&mut names);
+        graph.alias_closure(&mut names, 10);
         names.sort_unstable();
         assert_eq!(names, ["a", "b"]);
+    }
+
+    #[test]
+    fn later_aliases_do_not_reach_back_in_time() {
+        let mut graph = DefUseGraph::default();
+        graph.record(&facts(&["p"], &[], &[("p", "a")]), 3);
+        let mut names = vec!["a".to_string()];
+        // 순번 2 시점의 변경은 아직 존재하지 않던 별칭을 타고 번지지 못한다.
+        graph.alias_closure(&mut names, 2);
+        assert_eq!(names, ["a"]);
     }
 }

@@ -267,6 +267,25 @@ fn the_edit_loop_converges_by_realizing() {
 }
 
 #[test]
+fn disturbed_prefix_runs_converge_after_realize() {
+    // K = 10은 오염 때문에 Run이었다. realize가 그 자리를 새 실행으로 바꿔 달지
+    // 않으면, 이미 지나간 K = 20이 영원히 그 자리를 Run으로 만든다.
+    let mut history = session(&[
+        "K = 10\n",
+        "def f():\n    return K * 2\n",
+        "K = 20\n",
+        "y = f()\n",
+    ]);
+    let code = source("K = 10\ndef f():\n    return K * 2\ny = f()\n");
+    assert_eq!(
+        history.align(&code).plans.iter().map(|p| p.action).collect::<Vec<_>>(),
+        [Run, Reuse, Run]
+    );
+    history.realize(&code);
+    assert!(nothing_to_run(&history, "K = 10\ndef f():\n    return K * 2\ny = f()\n"));
+}
+
+#[test]
 fn realize_does_not_let_old_executions_poison_new_ones() {
     // 옛 실행은 새 실행보다 먼저 일어났다 — 시간을 거슬러 오염시키지 못한다.
     let mut history = session(&["x = 1\n", "y = x + 1\n"]);
@@ -355,4 +374,37 @@ fn live_names_track_binds_and_deletes() {
     let history = session(&["x = 1\n", "y = 2\n", "del x\n"]);
     let live: Vec<&str> = history.live_names().collect();
     assert_eq!(live, ["y"]);
+}
+
+#[test]
+fn session_only_names_are_flagged_as_unresolved() {
+    let history = session(&["df = 1\n"]);
+    let plan = history.align(&source("out = df + 1\n"));
+    // df는 이 소스 어디에서도 바인딩되지 않는다 — 세션에서는 돌지만 fresh run에서는
+    // 재현되지 않는 조각이라는 신호다.
+    assert!(plan.plans[0].diagnostics.iter().any(
+        |d| matches!(d, Diagnostic::UnresolvedReference { name, .. } if &**name == "df")
+    ));
+}
+
+#[test]
+fn self_contained_sources_have_no_unresolved_reads() {
+    let history = SessionHistory::new();
+    let plan = history.align(&source("import os\nx = 1\ny = x + len(os.sep)\nprint(y)\n"));
+    assert!(plan.plans.iter().all(|p| p.diagnostics.is_empty()));
+}
+
+#[test]
+fn downgrade_from_turns_the_tail_into_run() {
+    let history = session(&["x = 1\n", "y = 2\n", "z = 3\n"]);
+    let mut plan = history.align(&source("x = 1\ny = 2\nz = 3\n"));
+    plan.downgrade_from(1);
+    let acts: Vec<Action> = plan.plans.iter().map(|p| p.action).collect();
+    assert_eq!(acts, [Reuse, Run, Run]);
+    assert_eq!(plan.summary.reused, 1);
+    assert_eq!(plan.summary.run, 2);
+    assert_eq!(plan.summary.first_run, Some(1));
+    assert_eq!(plan.plans[1].witness, None);
+    // 판정의 기록은 남는다 — 재사용 가능했지만 호출자가 내렸다.
+    assert_eq!(plan.plans[1].reason, DecisionReason::ReusableExecution);
 }

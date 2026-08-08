@@ -140,9 +140,15 @@ impl<'a> Visitor<'a> for ExecWalker {
                     push_unique(&mut self.sink.mutates, name);
                 }
                 // `class C: global g; g = 1`의 g는 지금 module에 바인딩된다.
+                // 마찬가지로 `global g; del g`는 지금 module에서 지워진다.
                 for name in &inner.binds {
                     if inner.global_decls.contains(name) {
                         self.bind(name);
+                    }
+                }
+                for name in &inner.deletes {
+                    if inner.global_decls.contains(name) {
+                        push_unique(&mut self.sink.deletes, name);
                     }
                 }
                 self.sink.opaque |= inner.opaque;

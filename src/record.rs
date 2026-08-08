@@ -1,6 +1,6 @@
-use super::SessionHistory;
 use super::python_source::PythonSource;
 use super::trace::ExecRef;
+use super::{Action, SessionHistory};
 
 impl SessionHistory {
     pub fn new() -> Self {
@@ -15,38 +15,49 @@ impl SessionHistory {
         let source = self.sources.len();
         self.sources.push(code.clone());
         for (index, statement) in code.statements().iter().enumerate() {
-            let seq = self.realized.len() + self.residue.len();
+            let seq = self.executions;
+            self.executions += 1;
             self.realized.push(ExecRef { source, index, seq });
-            self.graph.record(&statement.facts);
-            self.summaries.record(&statement.facts);
+            self.graph.record(&statement.facts, seq);
+            self.summaries.record(&statement.facts, seq);
         }
     }
 
     /// 이 소스의 [`align`](SessionHistory::align) 계획을 실행 완료했음을 기록한다.
     ///
     /// 이제 이 소스가 실현 열이 된다 — 실현 밖으로 밀려난 옛 실행들은 residue로
-    /// 옮겨져 오염 계산의 재료로 남는다. plan을 인자로 받지 않고 prefix를 내부에서
-    /// 다시 계산하므로, 위조된 plan이 세션을 오염시키는 경로가 없다.
+    /// 옮겨져 오염 계산의 재료로 남는다. plan을 인자로 받지 않고 내부에서 같은
+    /// 판정을 다시 계산하므로, 위조된 plan이 세션을 오염시키는 경로가 없다.
     pub fn realize(&mut self, code: &PythonSource) {
+        // 호출자가 본 것과 같은 계획. align은 순수하므로 결과가 같다.
+        let plan = self.align(code);
         let statements = code.statements();
-        let matched = self
-            .realized
-            .iter()
-            .zip(statements)
-            .take_while(|(exec, statement)| {
-                exec.statement(&self.sources).canonical == statement.canonical
-            })
-            .count();
+        let matched = plan.summary.prefix_len;
 
         let source = self.sources.len();
         self.sources.push(code.clone());
+
         let displaced: Vec<ExecRef> = self.realized.drain(matched..).collect();
         self.residue.extend(displaced);
+
+        // prefix 안에서 오염 때문에 Run이 된 것들은 방금 다시 실행되었다 — 그
+        // 자리를 새 실행으로 바꿔 단다. 옛 실행을 그대로 두면 이미 지나간 오염이
+        // 영원히 그 자리를 Run으로 만든다. 재사용된 것은 원래 실행 그대로다.
+        for statement_plan in plan.plans.iter().take(matched) {
+            if statement_plan.action == Action::Run {
+                let index = statement_plan.index;
+                let seq = self.executions;
+                self.executions += 1;
+                // canonical이 같으므로 graph/summaries에 더할 새 정보는 없다.
+                self.realized[index] = ExecRef { source, index, seq };
+            }
+        }
         for (index, statement) in statements.iter().enumerate().skip(matched) {
-            let seq = self.realized.len() + self.residue.len();
+            let seq = self.executions;
+            self.executions += 1;
             self.realized.push(ExecRef { source, index, seq });
-            self.graph.record(&statement.facts);
-            self.summaries.record(&statement.facts);
+            self.graph.record(&statement.facts, seq);
+            self.summaries.record(&statement.facts, seq);
         }
     }
 

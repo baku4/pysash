@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 74b4c59769bc3be85640f5ddbc2d71015c2c8dbd91b30c767e1fc29135e71b07 # shrinks to pushed = ["y = x\n", "bump()\n", "c = 0\n"], incoming = ["y = x\n", "bump()\n", "def bump():\n    global c\n    c = c + 1\n"]

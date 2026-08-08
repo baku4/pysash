@@ -6,6 +6,7 @@ use crate::statement::Statement;
 use super::SessionHistory;
 use super::disturbance::{Hit, hits, residue_entries};
 use super::prefix::prefix_len;
+use super::self_contained::unresolved_reads;
 
 impl SessionHistory {
     /// 이 소스를 실행하려면 무엇을 재사용하고 무엇을 다시 실행해야 하는가.
@@ -46,6 +47,7 @@ impl SessionHistory {
             });
         }
 
+        let mut unresolved = unresolved_reads(statements);
         let plans: Vec<alignment_plan::StatementPlan> = statements
             .iter()
             .enumerate()
@@ -93,7 +95,7 @@ impl SessionHistory {
                     witness: (action == Action::Reuse).then_some(index),
                     action,
                     reason,
-                    diagnostics: Vec::new(),
+                    diagnostics: std::mem::take(&mut unresolved[index]),
                 }
             })
             .collect();

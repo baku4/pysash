@@ -63,7 +63,9 @@ pub enum Action {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum DecisionReason {
     /// 세션이 이 statement를 이 자리에서 이미 실행했고, 그 뒤에 일어난 어떤
-    /// 실행도 그 결과를 건드리지 않았다. `Reuse`를 낳는 유일한 이유다.
+    /// 실행도 그 결과를 건드리지 않았다. 판정에서 `Reuse`를 낳는 유일한 이유다.
+    /// [`downgrade_from`](AlignmentPlan::downgrade_from) 뒤에는 `Run`에 남아
+    /// "판정은 재사용 가능이었다"를 기록한다.
     ReusableExecution,
     /// 세션이 이 자리에 다른 statement를 실행했다. 편집 지점이다.
     StatementChanged,
@@ -82,5 +84,33 @@ impl AlignmentPlan {
     /// 다시 실행해야 하는 것만. 입력 소스의 순서 그대로다.
     pub fn run_plans(&self) -> impl Iterator<Item = &StatementPlan> {
         self.plans.iter().filter(|plan| plan.action == Action::Run)
+    }
+
+    /// `index`부터 끝까지 전부 `Run`으로 내린다.
+    ///
+    /// 외부 세계가 바뀌었을 수 있어 (예: [`Effect::ExternalRead`]) 판정보다 더
+    /// 실행하고 싶을 때 쓴다. 한 지점만 내리고 그 아래를 재사용하면 상태가
+    /// 어긋나므로, 지점 이후 전체를 내리는 것만 제공한다. Reuse → Run 방향만
+    /// 존재하므로 correctness를 깰 수 없다. 내려간 step의 `reason`은 판정
+    /// 당시의 것이 그대로 남는다.
+    pub fn downgrade_from(&mut self, index: usize) {
+        for plan in &mut self.plans {
+            if plan.index >= index && plan.action == Action::Reuse {
+                plan.action = Action::Run;
+                plan.witness = None;
+            }
+        }
+        let run = self
+            .plans
+            .iter()
+            .filter(|plan| plan.action == Action::Run)
+            .count();
+        self.summary.run = run;
+        self.summary.reused = self.summary.total - run;
+        self.summary.first_run = self
+            .plans
+            .iter()
+            .find(|plan| plan.action == Action::Run)
+            .map(|plan| plan.index);
     }
 }

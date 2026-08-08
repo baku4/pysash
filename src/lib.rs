@@ -106,6 +106,9 @@ pub struct SessionHistory {
     graph: def_use::DefUseGraph,
     /// 세션에 정의된 callable들의 요약.
     summaries: summaries::SummaryTable,
+    /// 지금까지 기록된 실행의 수. 실행 순번(seq) 발급기다 — realize가 실현 열을
+    /// 교체해도 순번은 절대 되돌아가지 않는다.
+    executions: usize,
     /// 부분 실행 등으로 세션 상태를 더는 신뢰할 수 없다.
     poisoned: bool,
 }

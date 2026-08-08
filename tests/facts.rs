@@ -286,6 +286,50 @@ fn match_patterns_bind_their_captures() {
 }
 
 #[test]
+fn walrus_leaks_out_of_comprehensions_but_targets_do_not() {
+    let facts = facts("[y := q for q in range(3)]\n");
+    assert!(facts.binds.iter().any(|name| &**name == "y"));
+    assert!(!facts.binds.iter().any(|name| &**name == "q"));
+}
+
+#[test]
+fn attribute_augassign_mutates_the_root() {
+    let facts = facts("x.y += 1\n");
+    assert!(facts.mutates.iter().any(|name| &**name == "x"));
+}
+
+#[test]
+fn starred_and_keyword_arguments_are_mutation_candidates() {
+    assert!(
+        facts("f(*items)\n")
+            .mutates
+            .iter()
+            .any(|name| &**name == "items")
+    );
+    assert!(
+        facts("f(data=rows)\n")
+            .mutates
+            .iter()
+            .any(|name| &**name == "rows")
+    );
+}
+
+#[test]
+fn nested_unpacking_binds_every_target() {
+    let facts = facts("(a, b), c = pair\n");
+    for name in ["a", "b", "c"] {
+        assert!(facts.binds.iter().any(|bind| &**bind == name));
+    }
+    assert!(facts.reads.iter().any(|name| &**name == "pair"));
+}
+
+#[test]
+fn global_del_in_a_class_body_deletes_now() {
+    let facts = facts("class C:\n    global g\n    del g\n");
+    assert!(facts.deletes.iter().any(|name| &**name == "g"));
+}
+
+#[test]
 fn mentions_cover_every_name() {
     let facts = facts("def f(a):\n    return helper(a) + y\n");
     for name in ["f", "helper", "y"] {

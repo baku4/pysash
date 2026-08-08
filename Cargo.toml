@@ -9,3 +9,6 @@ ruff_python_parser = "=0.0.6"
 ruff_python_ast = "=0.0.6"
 ruff_text_size = "=0.0.6"
 blake3 = "1"
+
+[dev-dependencies]
+proptest = "1"

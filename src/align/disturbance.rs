@@ -47,7 +47,8 @@ pub fn residue_entries(
                 push_unique(&mut entry.mutated, name);
             }
             for call in &facts.calls {
-                if let Some(summary) = summaries.resolve(call) {
+                // 이 실행은 자기 시점에 살아 있던 정의를 호출했다.
+                if let Some(summary) = summaries.resolve(call, *seq) {
                     entry.opaque |= summary.opaque;
                     for name in &summary.global_writes {
                         push_unique(&mut entry.rebound, name);
@@ -83,16 +84,13 @@ pub fn hits(
         push_unique(&mut produces, name);
     }
     for call in &facts.calls {
-        if let Some(summary) = summaries.resolve(call) {
+        // 이 실행은 자기 시점에 살아 있던 정의를 호출했다.
+        if let Some(summary) = summaries.resolve(call, seq) {
             for name in summary.global_writes.iter().chain(&summary.mutates_frees) {
                 push_unique(&mut produces, name);
             }
         }
     }
-    // 별칭 폐포는 in-place 변경 쪽에만 의미가 있다. 이름을 다시 바인딩하는 것은
-    // 별칭이 가리키던 객체를 건드리지 않는다.
-    let mut reachable = produces.clone();
-    graph.alias_closure(&mut reachable);
 
     for entry in entries.iter().filter(|entry| entry.seq > seq) {
         if entry.opaque {
@@ -103,6 +101,11 @@ pub fn hits(
                 return Some(Hit::Rebound(name.clone()));
             }
         }
+        // 별칭 폐포는 in-place 변경 쪽에만 의미가 있고 (이름 재바인딩은 별칭이
+        // 가리키던 객체를 건드리지 않는다), 이 entry의 변경 시점까지 존재한
+        // 별칭으로만 번진다.
+        let mut reachable = produces.clone();
+        graph.alias_closure(&mut reachable, entry.seq);
         for name in &reachable {
             if entry.mutated.contains(name) {
                 return Some(Hit::Mutated(name.clone()));
