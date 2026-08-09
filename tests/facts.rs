@@ -1,4 +1,4 @@
-//! 사실 추출(M2)의 완료 판정 — Design.md의 실측 누출 케이스들.
+//! 사실 추출의 완료 판정 — 상계를 좁게 잡으면 잘못된 재사용이 되는 실측 케이스들.
 
 use pysash::plan::Effect;
 use pysash::source::PythonSource;

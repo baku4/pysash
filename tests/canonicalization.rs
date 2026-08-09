@@ -33,9 +33,9 @@ fn assert_differ(pairs: &[(&str, &str)]) {
     }
 }
 
-/// Architecture.md가 명시한 예시. 이 셋은 완전히 동일해야 한다.
+/// 공백도, 주석도, 숫자 표기도 statement의 정체성이 아니다. 이 셋은 하나다.
 #[test]
-fn architecture_example_three_forms_are_one_statement() {
+fn spacing_comments_and_digit_separators_are_one_statement() {
     let a = canon!("x = 1000\n");
     let b = canon!("x=1000\n");
     let c = canon!("x = 1_000  # comment\n");

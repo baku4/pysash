@@ -1,8 +1,8 @@
 # rust-mod-shape에서는 선언 순서가 의미를 갖는다. rustfmt의 알파벳 재정렬을 끈다.
 #
 # - Import Block은 `std → external crate → crate:: → super::` 순서다
-#   (rules/1_code_blocks/1-1_import_block.md §3.2).
+#   (rust-mod-shape의 rules/1_code_blocks/1-1_import_block.md).
 # - Child Module Block은 Layered Declaration Order를 따른다 — 형제를 쓰는 child는
-#   그 형제보다 뒤에 선언한다 (rules/3_module_relations.md §6).
+#   그 형제보다 뒤에 선언한다 (rust-mod-shape의 rules/3_module_relations.md).
 reorder_imports = false
 reorder_modules = false

@@ -1,4 +1,4 @@
-//! Alignment의 완료 판정 — Design.md §4.5의 실측 반례들과 편집 루프의 수렴.
+//! Alignment의 완료 판정 — 잘못된 재사용을 낳던 실측 반례들과 편집 루프의 수렴.
 
 use pysash::source::PythonSource;
 use pysash::SessionHistory;
