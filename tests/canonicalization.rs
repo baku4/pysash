@@ -4,37 +4,41 @@
 //! 불필요한 재실행이 되어 그냥 느릴 뿐이다. 그래서 "같다"로 판정하는 목록보다
 //! "다르다"로 판정하는 목록이 더 중요하다.
 
-use pysash::canonical_statement::CanonicalStatement;
-use pysash::python_source::PythonSource;
+use pysash::source::PythonSource;
 
-fn canon(source: &str) -> CanonicalStatement {
-    let parsed = PythonSource::parse(source).unwrap_or_else(|e| panic!("{source:?}: {e}"));
-    assert_eq!(
-        parsed.statements().len(),
-        1,
-        "{source:?} should be exactly one statement"
-    );
-    parsed.statements()[0].canonical.clone()
+/// 소스 하나의 첫 statement가 가진 canonical 정체성. 타입은 crate 밖에서 이름
+/// 붙일 수 없으므로 (내부 어휘다) 추론에 맡긴다.
+macro_rules! canon {
+    ($source:expr) => {{
+        let source = $source;
+        let parsed = PythonSource::parse(source).unwrap_or_else(|e| panic!("{source:?}: {e}"));
+        assert_eq!(
+            parsed.statements().len(),
+            1,
+            "{source:?} should be exactly one statement"
+        );
+        parsed.statements()[0].canonical.clone()
+    }};
 }
 
 fn assert_same(pairs: &[(&str, &str)]) {
     for (a, b) in pairs {
-        assert_eq!(canon(a), canon(b), "expected {a:?} == {b:?}");
+        assert_eq!(canon!(a), canon!(b), "expected {a:?} == {b:?}");
     }
 }
 
 fn assert_differ(pairs: &[(&str, &str)]) {
     for (a, b) in pairs {
-        assert_ne!(canon(a), canon(b), "expected {a:?} != {b:?}");
+        assert_ne!(canon!(a), canon!(b), "expected {a:?} != {b:?}");
     }
 }
 
 /// Architecture.md가 명시한 예시. 이 셋은 완전히 동일해야 한다.
 #[test]
 fn architecture_example_three_forms_are_one_statement() {
-    let a = canon("x = 1000\n");
-    let b = canon("x=1000\n");
-    let c = canon("x = 1_000  # comment\n");
+    let a = canon!("x = 1000\n");
+    let b = canon!("x=1000\n");
+    let c = canon!("x = 1_000  # comment\n");
 
     assert_eq!(a, b);
     assert_eq!(b, c);

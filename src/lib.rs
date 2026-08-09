@@ -12,11 +12,16 @@
 //! 잘못된 재사용은 조용히 틀린 결과이고 불필요한 재실행은 낭비일 뿐이다. 이 비대칭이
 //! 이 crate 전반의 판정 기준이다 — 애매하면 언제나 다시 실행한다.
 //!
+//! 핵심 domain은 둘이다: 실행 기록인 [`SessionHistory`]와 입력인
+//! [`PythonSource`](source::PythonSource). 나머지는 이 둘의 입출력 어휘다 —
+//! [`source`]에 입력 쪽이, [`plan`]에 판정 결과 쪽이 산다.
+//!
 //! # 쓰는 법
 //!
 //! ```
-//! use pysash::{Action, DecisionReason, SessionHistory};
-//! use pysash::python_source::PythonSource;
+//! use pysash::SessionHistory;
+//! use pysash::plan::{Action, DecisionReason};
+//! use pysash::source::PythonSource;
 //!
 //! // 1. REPL에 입력하듯, 실제로 성공한 실행만 순서대로 밀어 넣는다.
 //! let mut history = SessionHistory::new();
@@ -53,30 +58,19 @@
 //! //    영구히 못 쓰게 되는 세션은 없다.
 //! history.realize(&edited);
 //! assert!(history.align(&edited).run_plans().next().is_none());
-//! # Ok::<(), pysash::ParseError>(())
+//! # Ok::<(), pysash::source::ParseError>(())
 //! ```
 
 mod range;
 pub use range::Range;
 
-mod effect;
-pub use effect::Effect;
-
-mod parse_error;
-pub use parse_error::{ParseError, ParseErrorKind};
-
-mod diagnostic;
-pub use diagnostic::Diagnostic;
+pub mod plan;
 
 mod statement_facts;
-pub use statement_facts::{CalleeSummary, StatementFacts};
-
-pub mod canonical_statement;
-
+mod canonical_statement;
 mod statement;
-pub use statement::Statement;
 
-pub mod python_source;
+pub mod source;
 
 mod trace;
 mod def_use;
@@ -84,7 +78,7 @@ mod summaries;
 
 /// 지금까지 성공적으로 실행된 것의 선형 기록.
 ///
-/// Python이나 IPython REPL에 입력하듯 [`PythonSource`](python_source::PythonSource)를
+/// Python이나 IPython REPL에 입력하듯 [`PythonSource`](source::PythonSource)를
 /// 순서대로 밀어 넣는다. **들어오는 소스는 성공한 실행이어야 한다** — 검증하지 않는
 /// 계약이다.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -95,7 +89,7 @@ pub struct SessionHistory {
     /// statement만 떼어 이어 붙이면 "어느 소스의 몇 번째"가 사라지고, 원문을
     /// 잘라볼 대상도 함께 사라진다. `PythonSource`는 전부 `Arc` 백업이라 보관
     /// 비용이 O(1)이다.
-    sources: Vec<python_source::PythonSource>,
+    sources: Vec<source::PythonSource>,
     /// 현재 "실현된" 선형 실행 열. 마지막 align의 소스를 그대로 실행한 상태라고
     /// 세션이 믿는 구간이다.
     realized: Vec<trace::ExecRef>,
@@ -112,9 +106,6 @@ pub struct SessionHistory {
     /// 부분 실행 등으로 세션 상태를 더는 신뢰할 수 없다.
     poisoned: bool,
 }
-
-mod alignment_plan;
-pub use alignment_plan::{Action, AlignmentPlan, DecisionReason, PlanSummary, StatementPlan};
 
 mod record;
 mod align;

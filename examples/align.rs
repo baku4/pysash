@@ -1,8 +1,8 @@
 //! `cargo run --example align`
 
-use pysash::Action;
 use pysash::SessionHistory;
-use pysash::python_source::PythonSource;
+use pysash::plan::Action;
+use pysash::source::PythonSource;
 
 fn main() {
     println!("=== 이어붙이기 ===");
@@ -36,8 +36,8 @@ fn main() {
     let edited = parse(EDITED);
     report(&history, &edited);
 
-    println!("\n=== 실행한 것을 기록한 뒤 — 2회차 ===");
-    history.push(&edited);
+    println!("\n=== Run을 실행하고 realize한 뒤 — 2회차 ===");
+    history.realize(&edited);
     report(&history, &edited);
 }
 

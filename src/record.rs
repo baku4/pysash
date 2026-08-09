@@ -1,6 +1,7 @@
-use super::python_source::PythonSource;
+use super::source::PythonSource;
 use super::trace::ExecRef;
-use super::{Action, SessionHistory};
+use super::SessionHistory;
+use super::plan::Action;
 
 impl SessionHistory {
     pub fn new() -> Self {

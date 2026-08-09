@@ -1,7 +1,6 @@
-use crate::alignment_plan;
-use crate::alignment_plan::{Action, DecisionReason};
-use crate::diagnostic::Diagnostic;
-use crate::python_source::PythonSource;
+use crate::plan;
+use crate::plan::{Action, DecisionReason, Diagnostic};
+use crate::source::PythonSource;
 use crate::statement::Statement;
 use super::SessionHistory;
 use super::disturbance::{Hit, hits, residue_entries};
@@ -18,7 +17,7 @@ impl SessionHistory {
     /// 남긴 것을 그 뒤의 어떤 실행도 건드리지 않았다.** 앞 조건은 canonical 비교가,
     /// 뒤 조건은 실현 밖 실행들(residue)의 오염 상계가 판정한다. 애매한 것은 전부
     /// Run으로 떨어진다.
-    pub fn align(&self, code: &PythonSource) -> alignment_plan::AlignmentPlan {
+    pub fn align(&self, code: &PythonSource) -> plan::AlignmentPlan {
         let realized: Vec<&Statement> = self
             .realized
             .iter()
@@ -48,7 +47,7 @@ impl SessionHistory {
         }
 
         let mut unresolved = unresolved_reads(statements);
-        let plans: Vec<alignment_plan::StatementPlan> = statements
+        let plans: Vec<plan::StatementPlan> = statements
             .iter()
             .enumerate()
             .map(|(index, statement)| {
@@ -87,7 +86,7 @@ impl SessionHistory {
                     (Action::Run, DecisionReason::NoMatchingExecution)
                 };
 
-                alignment_plan::StatementPlan {
+                plan::StatementPlan {
                     index,
                     range: statement.range,
                     effect: statement.facts.effect,
@@ -104,7 +103,7 @@ impl SessionHistory {
             .iter()
             .filter(|plan| plan.action == Action::Run)
             .count();
-        let summary = alignment_plan::PlanSummary {
+        let summary = plan::PlanSummary {
             total: statements.len(),
             reused: statements.len() - run,
             run,
@@ -116,7 +115,7 @@ impl SessionHistory {
                 .map(|plan| plan.index),
         };
 
-        alignment_plan::AlignmentPlan {
+        plan::AlignmentPlan {
             plans,
             summary,
             diagnostics,

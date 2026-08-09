@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use super::{CalleeSummary, StatementFacts};
+use super::statement_facts::{CalleeSummary, StatementFacts};
 
 /// 세션에 정의된 callable들의 요약. 정의된 실행 순번과 함께 버전으로 쌓인다.
 ///
@@ -62,7 +62,7 @@ impl SummaryTable {
 #[cfg(test)]
 mod tests {
     use super::SummaryTable;
-    use crate::{CalleeSummary, StatementFacts};
+    use crate::statement_facts::{CalleeSummary, StatementFacts};
 
     fn def(name: &str, summary: CalleeSummary) -> StatementFacts {
         StatementFacts {

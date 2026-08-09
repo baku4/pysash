@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use super::Statement;
+use super::statement::Statement;
 
 /// 파싱된 Python 소스.
 ///
@@ -14,6 +14,9 @@ pub struct PythonSource {
     raw: Arc<[u8]>,
     statements: Arc<[Statement]>,
 }
+
+mod parse_error;
+pub use parse_error::{ParseError, ParseErrorKind};
 
 mod parse;
 mod access;

@@ -1,7 +1,7 @@
 use std::error::Error;
 // module-rule: allow import-alias -- name-conflict: avoid collision with core::result::Result
 use std::fmt::{Display, Formatter, Result as FmtResult};
-use super::Range;
+use crate::Range;
 
 /// 소스를 `PythonSource`로 만들지 못한 이유.
 ///

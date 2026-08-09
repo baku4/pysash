@@ -1,8 +1,9 @@
 //! `Range`는 사용자가 준 **원본 바이트열** 기준이어야 한다. 이게 어긋나면 잘라낸
 //! 코드를 인터프리터에 먹일 수 없다.
 
-use pysash::{ParseErrorKind, Range};
-use pysash::python_source::PythonSource;
+use pysash::Range;
+use pysash::source::ParseErrorKind;
+use pysash::source::PythonSource;
 
 fn ranges(source: &str) -> Vec<(u32, u32)> {
     PythonSource::parse(source)

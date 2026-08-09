@@ -1,4 +1,4 @@
-use crate::parse_error::{ParseError, ParseErrorKind};
+use crate::source::{ParseError, ParseErrorKind};
 use crate::range::Range;
 
 /// 입력 바이트열을 `&str`로 읽고, 그 문자열이 원본의 몇 번째 바이트에서 시작하는지를

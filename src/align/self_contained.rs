@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use crate::diagnostic::Diagnostic;
+use crate::plan::Diagnostic;
 use crate::statement::Statement;
 
 /// Python 인터프리터가 기본으로 제공하는 이름들. 이 이름을 읽는 것은 소스 밖

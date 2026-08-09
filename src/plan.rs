@@ -1,6 +1,7 @@
-use super::{Diagnostic, Effect, Range};
+use super::Range;
 
-/// `SessionHistory`의 상태가 입력 소스의 super-set이 되도록 하는 실행 순서.
+/// [`SessionHistory`](crate::SessionHistory)의 상태가 입력 소스의 super-set이
+/// 되도록 하는 실행 순서.
 ///
 /// 입력 소스의 statement 하나하나에 대해 재사용할지 다시 실행할지를 순서대로 담는다.
 /// `Run`인 것을 이 순서대로 실행하면 소스 전체를 실행한 것과 같은 상태가 된다.
@@ -18,7 +19,7 @@ pub struct AlignmentPlan {
 /// statement 하나에 대한 판정.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct StatementPlan {
-    /// 입력 소스 `statements()`에서의 인덱스.
+    /// 입력 소스에서 몇 번째 statement인가.
     pub index: usize,
     /// 입력 소스 원본 바이트열에서의 위치.
     pub range: Range,
@@ -78,6 +79,49 @@ pub enum DecisionReason {
     /// 세션이 이 statement를 이 자리에서 실행하긴 했지만, 그 뒤의 실행이
     /// 이 statement가 바인딩한 `name`을 다시 바인딩했다.
     BindingChanged { name: Box<str> },
+}
+
+/// plan의 품질에 대한 주석. 에러가 아니다.
+///
+/// 내가 못 본 것과 내가 가정한 것을 드러낸다. 이게 붙어도 plan은 유효하다 —
+/// 애매한 것은 이미 Run으로 떨어졌기 때문이다.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Diagnostic {
+    /// 소스가 읽는 이름을 소스 안에서 찾을 수 없다. 세션에 있어야 실행되는
+    /// 조각이라는 뜻이고, fresh run에서는 재현되지 않는다.
+    UnresolvedReference { name: Box<str>, range: Range },
+    /// 정적으로 따라갈 수 없는 구문. 안전한 쪽(Run)으로 처리했다.
+    UnsupportedConstruct { construct: Box<str>, range: Range },
+    /// 세션이 이 소스의 prefix를 넘어 실행했다. 그 실행들이 오염 집합의
+    /// 재료가 된다.
+    SessionDiverged { residue_len: usize },
+    /// prefix 밖 실행에 반사적 구문이 있다 — 무엇이 오염됐는지 알 수 없어
+    /// 전부 Run이다.
+    OpaqueResidue { range: Range },
+}
+
+/// 이 statement가 무엇을 하는가의 분류. 판정이 아니라 사실이다.
+///
+/// 재사용 판정의 게이트가 아니다 — 판정은 오염 집합이 한다. 이 분류는 호출자가
+/// plan을 후처리할 때 쓴다. 예를 들어 외부 파일이 바뀌었을 수 있으니
+/// [`ExternalRead`](Effect::ExternalRead)는 재사용하지 않겠다는 정책은 호출자의
+/// 몫이다.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Effect {
+    /// 이름 바인딩 외에 관측 가능한 효과 없음.
+    Pure,
+    /// 모듈 임포트. `sys.modules` 캐시 덕에 재실행이 멱등이다.
+    Import,
+    /// print / display / 로깅 같은 출력.
+    Output,
+    /// 파일·네트워크·`input()` — 외부 세계를 읽는다.
+    ExternalRead,
+    /// 파일 쓰기·네트워크 전송·subprocess — 외부 세계를 바꾼다.
+    ExternalWrite,
+    /// random / time / uuid 같은 비결정적 값 생성.
+    Nondeterministic,
+    /// 반사적 구문 — 무엇이든 할 수 있다.
+    Opaque,
 }
 
 impl AlignmentPlan {

@@ -1,5 +1,5 @@
 use ruff_python_ast::Stmt;
-use crate::effect::Effect;
+use crate::plan::Effect;
 use super::scan::MentionScan;
 
 const OUTPUT_CALLS: &[&str] = &["display", "pprint", "print"];

@@ -1,5 +1,6 @@
+use super::Range;
 use super::canonical_statement::CanonicalStatement;
-use super::{Range, StatementFacts};
+use super::statement_facts::StatementFacts;
 
 /// 소스에서 떼어낸 statement 하나.
 ///

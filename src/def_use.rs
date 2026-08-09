@@ -1,4 +1,4 @@
-use super::StatementFacts;
+use super::statement_facts::StatementFacts;
 
 /// 이름 사이의 연결 기억 — 지금 어떤 이름이 살아 있고, 어떤 이름들이 같은 객체를
 /// 가리킬 수 있는가.
@@ -63,7 +63,7 @@ impl DefUseGraph {
 #[cfg(test)]
 mod tests {
     use super::DefUseGraph;
-    use crate::StatementFacts;
+    use crate::statement_facts::StatementFacts;
 
     fn facts(
         binds: &[&str],

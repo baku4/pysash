@@ -1,8 +1,9 @@
 //! 무작위 (세션, 소스) 쌍에 대해 절대 깨지면 안 되는 성질들.
 
 use proptest::prelude::*;
-use pysash::python_source::PythonSource;
-use pysash::{Action, SessionHistory};
+use pysash::source::PythonSource;
+use pysash::SessionHistory;
+use pysash::plan::Action;
 
 /// 실제 세션에 나올 법한 statement들. 바인딩·mutation·전이 global 쓰기·별칭이
 /// 골고루 섞여 있어야 오염 계산의 성질이 실제로 시험된다.

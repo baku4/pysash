@@ -1,4 +1,4 @@
-use super::Effect;
+use super::plan::Effect;
 
 /// statement 하나에서 정적으로 뽑아낸 사실. 오염 집합 계산의 재료다.
 ///

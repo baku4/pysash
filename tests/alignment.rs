@@ -1,7 +1,8 @@
 //! Alignment의 완료 판정 — Design.md §4.5의 실측 반례들과 편집 루프의 수렴.
 
-use pysash::python_source::PythonSource;
-use pysash::{Action, DecisionReason, Diagnostic, SessionHistory};
+use pysash::source::PythonSource;
+use pysash::SessionHistory;
+use pysash::plan::{Action, DecisionReason, Diagnostic};
 use Action::{Reuse, Run};
 
 fn source(text: &str) -> PythonSource {

@@ -3,7 +3,7 @@ use ruff_python_ast::{Expr, PySourceType, Stmt};
 use ruff_python_parser::parse_unchecked_source;
 use ruff_text_size::Ranged;
 use crate::canonical_statement::CanonicalStatement;
-use crate::parse_error::{ParseError, ParseErrorKind};
+use crate::source::{ParseError, ParseErrorKind};
 use crate::range::Range;
 use crate::statement::Statement;
 use super::PythonSource;
