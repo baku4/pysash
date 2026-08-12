@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use pysash::SessionHistory;
-use pysash::plan::{Action, AlignmentPlan, DecisionReason, Diagnostic};
+use pysash::plan::{Action, AlignmentPlan, DecisionReason, SessionDiagnostic};
 use pysash::source::PythonSource;
 
 /// 원본 텍스트를 함께 들고 다니는 fixture. 실패 메시지에 이름을 붙이려고 있다.
@@ -92,7 +92,7 @@ pub fn explain(plan: &AlignmentPlan, code: &PythonSource) -> String {
     out
 }
 
-pub fn has_diagnostic(plan: &AlignmentPlan, matches: impl Fn(&Diagnostic) -> bool) -> bool {
+pub fn has_diagnostic(plan: &AlignmentPlan, matches: impl Fn(&SessionDiagnostic) -> bool) -> bool {
     plan.diagnostics.iter().any(matches)
 }
 

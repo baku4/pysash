@@ -1,5 +1,5 @@
 use crate::plan;
-use crate::plan::{Action, DecisionReason, Diagnostic};
+use crate::plan::{Action, DecisionReason, SessionDiagnostic};
 use crate::source::PythonSource;
 use crate::statement::Statement;
 use super::SessionHistory;
@@ -27,24 +27,22 @@ impl SessionHistory {
 
         let prefix = prefix_len(&realized, statements);
         // 실현 밖 실행 = 이 소스와 갈라진 뒤의 실현 열 + 이전에 밀려난 것들.
-        let residue: Vec<(usize, &Statement)> = self.realized[prefix..]
-            .iter()
-            .chain(&self.residue)
+        let outside = || self.realized[prefix..].iter().chain(&self.residue);
+        let residue: Vec<(usize, &Statement)> = outside()
             .map(|exec| (exec.seq, exec.statement(&self.sources)))
             .collect();
         let entries = residue_entries(&residue, &self.summaries);
 
-        let mut diagnostics = Vec::new();
-        if !residue.is_empty() {
-            diagnostics.push(Diagnostic::SessionDiverged {
-                residue_len: residue.len(),
-            });
-        }
-        if let Some((_, opaque)) = residue.iter().find(|(_, statement)| statement.facts.opaque) {
-            diagnostics.push(Diagnostic::OpaqueResidue {
-                range: opaque.range,
-            });
-        }
+        // 반사적 구문은 하나만 있어도 오염이 전체가 되지만, 전부 싣는다 — 무엇이
+        // 세션을 알 수 없게 만들었는지는 호출자가 봐야 한다. 갈라졌다는 사실
+        // 자체는 summary.residue_len이 이미 말한다.
+        let diagnostics: Vec<SessionDiagnostic> = outside()
+            .filter(|exec| exec.statement(&self.sources).facts.opaque)
+            .map(|exec| SessionDiagnostic::OpaqueResidue {
+                source: exec.source,
+                range: exec.statement(&self.sources).range,
+            })
+            .collect();
 
         let mut unresolved = unresolved_reads(statements);
         let plans: Vec<plan::StatementPlan> = statements

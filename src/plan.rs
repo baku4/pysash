@@ -12,8 +12,8 @@ use super::Range;
 pub struct AlignmentPlan {
     pub plans: Vec<StatementPlan>,
     pub summary: PlanSummary,
-    /// plan 전체에 대한 주석. statement 하나에 붙는 것은 [`StatementPlan`]에 있다.
-    pub diagnostics: Vec<Diagnostic>,
+    /// 세션이 지금 어떤 상태인가. statement 하나에 붙는 것은 [`StatementPlan`]에 있다.
+    pub diagnostics: Vec<SessionDiagnostic>,
 }
 
 /// statement 하나에 대한 판정.
@@ -30,7 +30,7 @@ pub struct StatementPlan {
     /// `Reuse`일 때 근거가 된 실행의 세션 내 위치 (0부터, 소스 경계를 무시하고
     /// 이어 붙인 statement 순서). `Run`이면 없다.
     pub witness: Option<usize>,
-    pub diagnostics: Vec<Diagnostic>,
+    pub diagnostics: Vec<StatementDiagnostic>,
 }
 
 /// plan의 요약 숫자들.
@@ -81,23 +81,33 @@ pub enum DecisionReason {
     BindingChanged { name: Box<str> },
 }
 
-/// plan의 품질에 대한 주석. 에러가 아니다.
+/// 세션이 지금 어떤 상태인가에 대한 주석. plan 전체에 붙는다.
 ///
-/// 내가 못 본 것과 내가 가정한 것을 드러낸다. 이게 붙어도 plan은 유효하다 —
-/// 애매한 것은 이미 Run으로 떨어졌기 때문이다.
+/// 에러가 아니다 — 애매한 것은 이미 Run으로 떨어졌으므로 이게 붙어도 plan은
+/// 유효하다. 내가 못 본 것과 내가 가정한 것을 드러낸다.
+///
+/// "세션이 이 소스의 prefix를 넘어 실행했는가"는 여기 없다.
+/// [`PlanSummary::residue_len`]이 그 사실 자체이고, 진단으로 한 번 더 말하면
+/// 같은 것을 두 군데서 관리하게 된다.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Diagnostic {
+pub enum SessionDiagnostic {
+    /// 실현 밖 실행에 반사적 구문이 있다 — 무엇이 오염됐는지 알 수 없어 전부
+    /// Run이다. 반사적 구문이 여럿이면 전부 실린다.
+    ///
+    /// 이 실행은 입력 소스가 아니라 **세션이 과거에 받은 소스**에 있다. 그래서
+    /// `source`([`SessionHistory::sources`](crate::SessionHistory::sources)의
+    /// 인덱스)와 `range`(그 소스의 바이트열 기준)가 함께 있어야 위치를 짚을 수 있다.
+    OpaqueResidue { source: usize, range: Range },
+}
+
+/// statement 하나에 대한 주석.
+///
+/// 위치는 담지 않는다 — [`StatementPlan::range`]가 이미 그 statement의 위치다.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum StatementDiagnostic {
     /// 소스가 읽는 이름을 소스 안에서 찾을 수 없다. 세션에 있어야 실행되는
     /// 조각이라는 뜻이고, fresh run에서는 재현되지 않는다.
-    UnresolvedReference { name: Box<str>, range: Range },
-    /// 정적으로 따라갈 수 없는 구문. 안전한 쪽(Run)으로 처리했다.
-    UnsupportedConstruct { construct: Box<str>, range: Range },
-    /// 세션이 이 소스의 prefix를 넘어 실행했다. 그 실행들이 오염 집합의
-    /// 재료가 된다.
-    SessionDiverged { residue_len: usize },
-    /// prefix 밖 실행에 반사적 구문이 있다 — 무엇이 오염됐는지 알 수 없어
-    /// 전부 Run이다.
-    OpaqueResidue { range: Range },
+    UnresolvedReference { name: Box<str> },
 }
 
 /// 이 statement가 무엇을 하는가의 분류. 판정이 아니라 사실이다.

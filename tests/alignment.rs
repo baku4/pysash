@@ -2,7 +2,7 @@
 
 use pysash::source::PythonSource;
 use pysash::SessionHistory;
-use pysash::plan::{Action, DecisionReason, Diagnostic};
+use pysash::plan::{Action, DecisionReason, SessionDiagnostic, StatementDiagnostic};
 use Action::{Reuse, Run};
 
 fn source(text: &str) -> PythonSource {
@@ -216,23 +216,23 @@ fn reflective_residue_runs_everything() {
     let code = "import builtins\nn = len('abc')\n";
     let plan = history.align(&source(code));
     assert!(plan.plans.iter().all(|p| p.action == Run));
-    assert!(
-        plan.diagnostics
-            .iter()
-            .any(|d| matches!(d, Diagnostic::OpaqueResidue { .. }))
-    );
+
+    // 반사적 구문은 입력 소스가 아니라 세션이 과거에 받은 소스에 있다 — source
+    // 인덱스가 함께 와야 원문을 짚을 수 있다.
+    let Some(SessionDiagnostic::OpaqueResidue { source, range }) = plan.diagnostics.first() else {
+        panic!("반사적 구문이 실현 밖에 있다");
+    };
+    assert_eq!(history.sources()[*source].slice(*range), b"builtins.len = str");
 }
 
 #[test]
 fn a_diverged_session_reports_its_residue() {
     let history = session(&["x = 1\n", "y = 2\n"]);
     let plan = history.align(&source("x = 1\n"));
+    // 갈라졌다는 사실은 summary가 말한다. 진단으로 한 번 더 말하지 않는다 —
+    // 같은 것을 두 군데서 관리하게 되기 때문이다.
     assert_eq!(plan.summary.residue_len, 1);
-    assert!(
-        plan.diagnostics
-            .iter()
-            .any(|d| matches!(d, Diagnostic::SessionDiverged { residue_len: 1 }))
-    );
+    assert!(plan.diagnostics.is_empty());
 }
 
 #[test]
@@ -384,7 +384,7 @@ fn session_only_names_are_flagged_as_unresolved() {
     // df는 이 소스 어디에서도 바인딩되지 않는다 — 세션에서는 돌지만 fresh run에서는
     // 재현되지 않는 조각이라는 신호다.
     assert!(plan.plans[0].diagnostics.iter().any(
-        |d| matches!(d, Diagnostic::UnresolvedReference { name, .. } if &**name == "df")
+        |d| matches!(d, StatementDiagnostic::UnresolvedReference { name } if &**name == "df")
     ));
 }
 

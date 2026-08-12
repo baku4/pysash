@@ -12,7 +12,7 @@
 mod support;
 
 use pysash::SessionHistory;
-use pysash::plan::{DecisionReason, Diagnostic, Effect};
+use pysash::plan::{DecisionReason, Effect, SessionDiagnostic, StatementDiagnostic};
 use support::{actions, explain, has_diagnostic, realized, reasons, step};
 
 const BASE: &str = "01_base.py";
@@ -58,10 +58,8 @@ fn editing_only_the_last_line_reuses_everything_above() {
     assert_eq!(plan.summary.prefix_len, 9);
     assert_eq!(plan.summary.residue_len, 1);
     assert_eq!(plan.plans[9].reason, DecisionReason::StatementChanged);
-    assert!(has_diagnostic(&plan, |d| matches!(
-        d,
-        Diagnostic::SessionDiverged { residue_len: 1 }
-    )));
+    // 밀려난 실행이 있다는 사실은 summary가 말한다. 그것 말고 붙일 주석은 없다.
+    assert!(plan.diagnostics.is_empty());
 }
 
 /// 위쪽 임계값을 고친 경우. 편집 지점(5) 아래는 당연히 전부 Run이고, 그 **위**가
@@ -280,14 +278,14 @@ fn a_star_import_inside_the_prefix_is_harmless() {
     assert_eq!(plan.plans[4].effect, Effect::Opaque);
     assert!(!has_diagnostic(&plan, |d| matches!(
         d,
-        Diagnostic::OpaqueResidue { .. }
+        SessionDiagnostic::OpaqueResidue { .. }
     )));
 
     // `parse_config`는 이 소스 어디에서도 바인딩되지 않는다 — 세션에서만 도는
     // 조각이라는 신호다.
     assert!(plan.plans[6].diagnostics.iter().any(|diagnostic| matches!(
         diagnostic,
-        Diagnostic::UnresolvedReference { name, .. } if &**name == "parse_config"
+        StatementDiagnostic::UnresolvedReference { name } if &**name == "parse_config"
     )));
 }
 
@@ -304,7 +302,7 @@ fn a_star_import_pushed_out_of_the_prefix_runs_everything() {
     assert_eq!(plan.summary.residue_len, 5);
     assert!(has_diagnostic(&plan, |d| matches!(
         d,
-        Diagnostic::OpaqueResidue { .. }
+        SessionDiagnostic::OpaqueResidue { .. }
     )));
 
     let reasons = reasons(&plan);

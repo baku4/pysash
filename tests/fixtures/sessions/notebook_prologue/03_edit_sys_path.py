@@ -16,7 +16,7 @@
 #
 # `import *`(index 4)보다 **위**인 index 3을 고쳤다. 이제 opaque한 실행이 실현 열
 # 밖으로 나가므로 오염 집합이 전체가 된다 — 무엇이 망가졌는지 알 수 없어 전부
-# 다시 돈다. `Diagnostic::OpaqueResidue`가 붙어야 한다.
+# 다시 돈다. `SessionDiagnostic::OpaqueResidue`가 붙어야 한다.
 
 # %%
 import os, sys

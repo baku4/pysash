@@ -279,6 +279,31 @@ fn downgrade_from_zero_turns_the_whole_plan_into_run() {
     }
 }
 
+/// summary의 절반은 파생값이고, `downgrade_from`이 그걸 손으로 다시 맞춘다.
+/// 본문과 어긋나면 호출자가 직접 센 숫자와 요약이 달라진다.
+#[test]
+fn the_summary_always_agrees_with_the_steps() {
+    for fixture in corpus() {
+        let history = realized(&fixture.source);
+        let total = fixture.source.statements().len();
+        for index in edit_points(total) {
+            let mut plan = history.align(&fixture.source);
+            plan.downgrade_from(index);
+
+            let where_ = format!("{} @{index}", fixture.name);
+            let run = plan.plans.iter().filter(|s| s.action == Run).count();
+            assert_eq!(plan.summary.total, plan.plans.len(), "{where_}");
+            assert_eq!(plan.summary.run, run, "{where_}");
+            assert_eq!(plan.summary.reused, plan.summary.total - run, "{where_}");
+            assert_eq!(
+                plan.summary.first_run,
+                plan.plans.iter().find(|s| s.action == Run).map(|s| s.index),
+                "{where_}"
+            );
+        }
+    }
+}
+
 #[test]
 fn run_plans_is_the_run_subset_in_source_order() {
     for fixture in corpus() {

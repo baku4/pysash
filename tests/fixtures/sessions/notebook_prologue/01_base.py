@@ -19,7 +19,7 @@
 # (양쪽이 똑같이 실행됐다), prefix 밖으로 밀려나면 오염 집합이 전체가 된다.
 #
 # `parse_config`는 이 소스 어디에서도 바인딩되지 않는다 —
-# `Diagnostic::UnresolvedReference`가 붙어야 하는 자리다.
+# `StatementDiagnostic::UnresolvedReference`가 붙어야 하는 자리다.
 
 # %%
 import os, sys

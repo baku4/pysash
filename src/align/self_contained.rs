@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use crate::plan::Diagnostic;
+use crate::plan::StatementDiagnostic;
 use crate::statement::Statement;
 
 /// Python 인터프리터가 기본으로 제공하는 이름들. 이 이름을 읽는 것은 소스 밖
@@ -33,8 +33,8 @@ const BUILTINS: &[&str] = &[
 /// 각 statement가 읽지만, 이 소스 어디에서도 바인딩되지 않고 builtin도 아닌 이름.
 ///
 /// 세션에 있어야만 실행되는 조각이라는 신호다 — fresh run에서는 재현되지 않는다.
-/// `range`는 이름의 위치가 아니라 그 statement의 위치다.
-pub fn unresolved_reads(statements: &[Statement]) -> Vec<Vec<Diagnostic>> {
+/// 반환값의 i번째가 i번째 statement의 진단이다.
+pub fn unresolved_reads(statements: &[Statement]) -> Vec<Vec<StatementDiagnostic>> {
     let bound: HashSet<&str> = statements
         .iter()
         .flat_map(|statement| statement.facts.binds.iter().map(|name| &**name))
@@ -47,10 +47,7 @@ pub fn unresolved_reads(statements: &[Statement]) -> Vec<Vec<Diagnostic>> {
                 .reads
                 .iter()
                 .filter(|name| !bound.contains(&***name) && !BUILTINS.contains(&&***name))
-                .map(|name| Diagnostic::UnresolvedReference {
-                    name: name.clone(),
-                    range: statement.range,
-                })
+                .map(|name| StatementDiagnostic::UnresolvedReference { name: name.clone() })
                 .collect()
         })
         .collect()
