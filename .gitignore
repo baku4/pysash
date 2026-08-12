@@ -8,5 +8,4 @@ Cargo.lock
 # Docs & Agent
 CLAUDE.md
 Architecture.md
-Design.md
 .claude/

@@ -17,6 +17,8 @@ PySASH performs static analysis only. It does not execute Python code.
 
 편집 루프는 `align → (Run만 실행) → realize`로 수렴한다. 실행이 중간에 실패해 세션을 믿을 수 없게 되면 `poison()`으로 표시한다 — 이후는 전부 Run이며, 복구는 새 인터프리터 + 새 `SessionHistory`다.
 
+왜 이렇게 판단하는지 — 어떤 대안을 왜 버렸는지, 상계를 어디서 끊었는지, 정확성 논증 — 는 [docs/design.md](docs/design.md)에 있다. 타입 하나하나의 계약은 rustdoc이 정본이다.
+
 ## 이 도구가 서 있는 가정 — 정확히 4개
 
 정적 분석만으로 Python을 건전하게 다루는 것은 불가능하다. 이 도구는 아래 4개의 가정 위에 서 있고, 각각이 깨지는 예를 함께 적는다.
@@ -28,7 +30,7 @@ PySASH performs static analysis only. It does not execute Python code.
 | **A-NoForeignGlobalWrite** | 세션 밖에 정의된 함수는 이 module의 global을 재바인딩하지 않는다 (Python 의미론상 `global x`는 그 함수 module의 x를 쓴다) | reflection으로 우리 globals를 얻어 쓰는 외부 함수 — 단, 반사 구문이 세션에 보이면 opaque로 떨어져 전부 Run이 된다 |
 | **A-KnownEffects** | 화이트리스트 밖 호출의 효과는 결과 바인딩 ∪ 언급된 이름의 in-place 변경 ∪ 세션 정의 callee의 전이 요약 안에 있다 | 고차 함수 — `h = f; h()`처럼 호출 대상이 정적으로 잡히지 않으면 callee의 global 쓰기를 놓칠 수 있다 |
 
-가정이 깨지면 **잘못된 Reuse**(조용히 틀린 결과)가 될 수 있다. 반대 방향 — 정밀도가 부족해 생기는 불필요한 Run — 은 언제나 감수한다.
+가정이 깨지면 **잘못된 Reuse**(조용히 틀린 결과)가 될 수 있다. 반대 방향 — 정밀도가 부족해 생기는 불필요한 Run — 은 언제나 감수한다. 각 가정을 무엇이 방어하는지는 [docs/design.md](docs/design.md#9-서-있는-가정--정확히-4개)에 있다.
 
 ## 범위 밖 (v0.1)
 

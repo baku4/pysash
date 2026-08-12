@@ -125,6 +125,70 @@ pub fn insert_probe(source: &PythonSource, index: usize) -> PythonSource {
     PythonSource::parse_bytes(&bytes).expect("한 줄 삽입은 파싱을 깨지 않는다")
 }
 
+/// `index` 자리의 statement를 다른 한 줄로 갈아 끼운 소스. statement 수는 그대로다.
+///
+/// 셀을 새로 만들지도, 아래를 밀지도 않는 **제자리 수정** — 셸에서 한 줄 고치는
+/// 바로 그 편집이다. 아래 statement들은 index도 canonical도 그대로지만, 앞이
+/// 달라졌으므로 더 이상 "그 자리의 실행"이 아니다.
+pub fn replace_statement(source: &PythonSource, index: usize) -> PythonSource {
+    let raw = source.raw();
+    let statement = &source.statements()[index];
+    let (start, end) = (statement.range.start as usize, statement.range.end as usize);
+    assert!(
+        start == 0 || raw[start - 1] == b'\n',
+        "statement {index}가 줄 첫 칸에서 시작하지 않는다"
+    );
+    let mut bytes = Vec::with_capacity(raw.len() + PROBE.len());
+    bytes.extend_from_slice(&raw[..start]);
+    // 개행은 원문의 것을 그대로 쓴다 — 뒤따르는 주석도 그 자리에 남는다.
+    bytes.extend_from_slice(PROBE.trim_end().as_bytes());
+    bytes.extend_from_slice(&raw[end..]);
+    PythonSource::parse_bytes(&bytes).expect("한 줄 치환은 파싱을 깨지 않는다")
+}
+
+/// 각 statement가 jupytext `# %%` 셀 중 몇 번째에 들어 있는가.
+///
+/// 셸은 셀 단위로 실행한다 — 셀 안에 Run이 하나라도 있으면 그 셀은 통째로 돈다.
+/// 마커가 없는 소스는 전부 한 셀로 본다.
+pub fn cell_of_statement(source: &PythonSource) -> Vec<usize> {
+    let raw = source.raw();
+    let mut marks: Vec<usize> = Vec::new();
+    let mut offset = 0;
+    for line in raw.split_inclusive(|byte| *byte == b'\n') {
+        if line.starts_with(b"# %%") {
+            marks.push(offset);
+        }
+        offset += line.len();
+    }
+    source
+        .statements()
+        .iter()
+        .map(|statement| {
+            let at = statement.range.start as usize;
+            marks.iter().rposition(|mark| *mark <= at).unwrap_or(0)
+        })
+        .collect()
+}
+
+/// 셀 단위 재사용 — (다시 돌지 않는 셀, statement가 든 셀 전체).
+///
+/// `cells`는 plan을 낳은 그 소스의 [`cell_of_statement`] 결과여야 한다.
+pub fn cell_reuse(plan: &AlignmentPlan, cells: &[usize]) -> (usize, usize) {
+    let mut run: Vec<usize> = plan
+        .plans
+        .iter()
+        .filter(|statement| statement.action == Action::Run)
+        .map(|statement| cells[statement.index])
+        .collect();
+    run.sort_unstable();
+    run.dedup();
+
+    let mut all = cells.to_vec();
+    all.sort_unstable();
+    all.dedup();
+    (all.len() - run.len(), all.len())
+}
+
 /// 맨 뒤에 statement 한 줄을 덧붙인 소스.
 pub fn append_probe(source: &PythonSource) -> PythonSource {
     let mut bytes = source.raw().to_vec();
