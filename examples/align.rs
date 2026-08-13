@@ -57,10 +57,10 @@ fn parse(text: &str) -> PythonSource {
 
 fn report(history: &SessionHistory, code: &PythonSource) {
     let plan = history.align(code);
-    let reused = plan.plans.len() - plan.run_plans().count();
-    println!("{}/{} 재사용", reused, plan.plans.len());
+    let reused = plan.steps.len() - plan.run_steps().count();
+    println!("{}/{} 재사용", reused, plan.steps.len());
 
-    for entry in &plan.plans {
+    for entry in &plan.steps {
         let text = String::from_utf8_lossy(code.slice(entry.range));
         let mark = match entry.action {
             Action::Reuse => "reuse",

@@ -45,7 +45,7 @@ impl SessionHistory {
             .collect();
 
         let mut unresolved = unresolved_reads(statements);
-        let plans: Vec<plan::StatementPlan> = statements
+        let steps: Vec<plan::StatementPlan> = statements
             .iter()
             .enumerate()
             .map(|(index, statement)| {
@@ -88,8 +88,6 @@ impl SessionHistory {
                     index,
                     range: statement.range,
                     effect: statement.facts.effect,
-                    // 재사용의 근거는 실현 열의 같은 자리 실행이다.
-                    witness: (action == Action::Reuse).then_some(index),
                     action,
                     reason,
                     diagnostics: std::mem::take(&mut unresolved[index]),
@@ -97,25 +95,10 @@ impl SessionHistory {
             })
             .collect();
 
-        let run = plans
-            .iter()
-            .filter(|plan| plan.action == Action::Run)
-            .count();
-        let summary = plan::PlanSummary {
-            total: statements.len(),
-            reused: statements.len() - run,
-            run,
+        plan::AlignmentPlan {
+            steps,
             prefix_len: prefix,
             residue_len: residue.len(),
-            first_run: plans
-                .iter()
-                .find(|plan| plan.action == Action::Run)
-                .map(|plan| plan.index),
-        };
-
-        plan::AlignmentPlan {
-            plans,
-            summary,
             diagnostics,
         }
     }

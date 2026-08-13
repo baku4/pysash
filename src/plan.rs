@@ -10,8 +10,16 @@ use super::Range;
 /// 경로도 없다.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AlignmentPlan {
-    pub plans: Vec<StatementPlan>,
-    pub summary: PlanSummary,
+    pub steps: Vec<StatementPlan>,
+    /// 세션과 이 소스가 앞에서 몇 개까지 같았는가.
+    ///
+    /// [`steps`](Self::steps)를 세어서는 알 수 없다 — 전부 Run인 계획이라도 앞이
+    /// 5개까지 같았는지 하나도 안 같았는지가 판정에는 남지 않는다. 그래서 이건
+    /// 저장한다.
+    pub prefix_len: usize,
+    /// prefix를 넘어 세션이 추가로 실행한 statement 수. 0이면 세션이 이 소스의
+    /// 순수 prefix다. 이것도 `steps`에서 셀 수 없다.
+    pub residue_len: usize,
     /// 세션이 지금 어떤 상태인가. statement 하나에 붙는 것은 [`StatementPlan`]에 있다.
     pub diagnostics: Vec<SessionDiagnostic>,
 }
@@ -27,13 +35,14 @@ pub struct StatementPlan {
     pub reason: DecisionReason,
     /// 이 statement가 무엇을 하는가의 분류. 호출자 후처리용이다.
     pub effect: Effect,
-    /// `Reuse`일 때 근거가 된 실행의 세션 내 위치 (0부터, 소스 경계를 무시하고
-    /// 이어 붙인 statement 순서). `Run`이면 없다.
-    pub witness: Option<usize>,
     pub diagnostics: Vec<StatementDiagnostic>,
 }
 
-/// plan의 요약 숫자들.
+/// plan을 훑어보기 좋은 숫자들. [`AlignmentPlan::summary`]가 그때그때 만든다.
+///
+/// 저장되지 않으므로 본문과 어긋날 수 없다 — 절반은 [`AlignmentPlan::steps`]를
+/// 세면 나오는 값이고, 세어 둔 사본을 들고 있으면 계획을 고치는 쪽이 그 사본을
+/// 손으로 맞춰야 한다.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct PlanSummary {
     /// 입력 소스의 statement 수.
@@ -135,9 +144,30 @@ pub enum Effect {
 }
 
 impl AlignmentPlan {
+    /// 훑어보기 좋은 숫자들. 부를 때마다 [`steps`](Self::steps)를 세어 만든다.
+    pub fn summary(&self) -> PlanSummary {
+        let run = self
+            .steps
+            .iter()
+            .filter(|step| step.action == Action::Run)
+            .count();
+        PlanSummary {
+            total: self.steps.len(),
+            reused: self.steps.len() - run,
+            run,
+            prefix_len: self.prefix_len,
+            residue_len: self.residue_len,
+            first_run: self
+                .steps
+                .iter()
+                .find(|step| step.action == Action::Run)
+                .map(|step| step.index),
+        }
+    }
+
     /// 다시 실행해야 하는 것만. 입력 소스의 순서 그대로다.
-    pub fn run_plans(&self) -> impl Iterator<Item = &StatementPlan> {
-        self.plans.iter().filter(|plan| plan.action == Action::Run)
+    pub fn run_steps(&self) -> impl Iterator<Item = &StatementPlan> {
+        self.steps.iter().filter(|step| step.action == Action::Run)
     }
 
     /// `index`부터 끝까지 전부 `Run`으로 내린다.
@@ -148,23 +178,10 @@ impl AlignmentPlan {
     /// 존재하므로 correctness를 깰 수 없다. 내려간 step의 `reason`은 판정
     /// 당시의 것이 그대로 남는다.
     pub fn downgrade_from(&mut self, index: usize) {
-        for plan in &mut self.plans {
-            if plan.index >= index && plan.action == Action::Reuse {
-                plan.action = Action::Run;
-                plan.witness = None;
+        for step in &mut self.steps {
+            if step.index >= index && step.action == Action::Reuse {
+                step.action = Action::Run;
             }
         }
-        let run = self
-            .plans
-            .iter()
-            .filter(|plan| plan.action == Action::Run)
-            .count();
-        self.summary.run = run;
-        self.summary.reused = self.summary.total - run;
-        self.summary.first_run = self
-            .plans
-            .iter()
-            .find(|plan| plan.action == Action::Run)
-            .map(|plan| plan.index);
     }
 }

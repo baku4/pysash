@@ -69,8 +69,8 @@ fn a_pushed_source_is_entirely_reusable() {
         history.push(&fixture.source);
         let plan = history.align(&fixture.source);
 
-        assert_eq!(plan.summary.run, 0, "{}: {}", fixture.name, actions(&plan));
-        assert_eq!(plan.summary.residue_len, 0, "{}", fixture.name);
+        assert_eq!(plan.summary().run, 0, "{}: {}", fixture.name, actions(&plan));
+        assert_eq!(plan.residue_len, 0, "{}", fixture.name);
         assert!(plan.diagnostics.is_empty(), "{}", fixture.name);
     }
 }
@@ -80,7 +80,7 @@ fn a_realized_source_is_entirely_reusable() {
     for fixture in corpus() {
         let history = realized(&fixture.source);
         let plan = history.align(&fixture.source);
-        assert_eq!(plan.summary.run, 0, "{}: {}", fixture.name, actions(&plan));
+        assert_eq!(plan.summary().run, 0, "{}: {}", fixture.name, actions(&plan));
     }
 }
 
@@ -111,10 +111,10 @@ fn a_realized_head_is_reused_when_the_tail_is_appended() {
             let plan = history.align(&fixture.source);
 
             let where_ = format!("{} @{count}", fixture.name);
-            assert_eq!(plan.summary.prefix_len, count, "{where_}");
-            assert_eq!(plan.summary.reused, count, "{where_}");
-            assert_eq!(plan.summary.residue_len, 0, "{where_}");
-            for statement in &plan.plans {
+            assert_eq!(plan.prefix_len, count, "{where_}");
+            assert_eq!(plan.summary().reused, count, "{where_}");
+            assert_eq!(plan.residue_len, 0, "{where_}");
+            for statement in &plan.steps {
                 let expected = if statement.index < count { Reuse } else { Run };
                 assert_eq!(statement.action, expected, "{where_} #{}", statement.index);
             }
@@ -134,10 +134,10 @@ fn appending_one_statement_runs_only_that_statement() {
         let history = realized(&fixture.source);
         let plan = history.align(&grown);
 
-        assert_eq!(plan.summary.run, 1, "{}: {}", fixture.name, actions(&plan));
-        assert_eq!(plan.summary.reused, total, "{}", fixture.name);
-        assert_eq!(plan.summary.first_run, Some(total), "{}", fixture.name);
-        assert_eq!(plan.summary.residue_len, 0, "{}", fixture.name);
+        assert_eq!(plan.summary().run, 1, "{}: {}", fixture.name, actions(&plan));
+        assert_eq!(plan.summary().reused, total, "{}", fixture.name);
+        assert_eq!(plan.summary().first_run, Some(total), "{}", fixture.name);
+        assert_eq!(plan.residue_len, 0, "{}", fixture.name);
     }
 }
 
@@ -153,21 +153,21 @@ fn inserting_a_statement_runs_everything_from_that_point() {
             let plan = history.align(&edited);
 
             let where_ = format!("{} @{index}", fixture.name);
-            assert_eq!(plan.summary.prefix_len, index, "{where_}");
+            assert_eq!(plan.prefix_len, index, "{where_}");
             // 삽입 지점은 반드시 Run이다. 그 위가 오염되었으면 첫 Run은 더 위일 수 있다.
             assert!(
-                plan.summary.first_run.expect("삽입 지점은 언제나 Run이다") <= index,
+                plan.summary().first_run.expect("삽입 지점은 언제나 Run이다") <= index,
                 "{where_}: {}",
                 actions(&plan)
             );
-            for statement in plan.plans.iter().filter(|s| s.index >= index) {
+            for statement in plan.steps.iter().filter(|s| s.index >= index) {
                 assert_eq!(statement.action, Run, "{where_} #{}", statement.index);
             }
         }
     }
 }
 
-/// Reuse는 prefix 밖에서 절대 나오지 않고, witness는 Reuse에만 붙는다.
+/// Reuse는 prefix 밖에서 절대 나오지 않는다.
 #[test]
 fn reuse_never_appears_beyond_the_prefix() {
     for fixture in corpus() {
@@ -177,15 +177,9 @@ fn reuse_never_appears_beyond_the_prefix() {
             let history = realized(&fixture.source);
             let plan = history.align(&edited);
 
-            assert_eq!(plan.summary.reused + plan.summary.run, plan.summary.total);
-            for statement in &plan.plans {
-                match statement.action {
-                    Reuse => {
-                        assert!(statement.index < plan.summary.prefix_len, "{}", fixture.name);
-                        assert_eq!(statement.witness, Some(statement.index));
-                    }
-                    Run => assert_eq!(statement.witness, None, "{}", fixture.name),
-                }
+            assert_eq!(plan.summary().reused + plan.summary().run, plan.summary().total);
+            for statement in plan.steps.iter().filter(|step| step.action == Reuse) {
+                assert!(statement.index < plan.prefix_len, "{}", fixture.name);
             }
         }
     }
@@ -198,14 +192,14 @@ fn the_edit_loop_converges_after_every_realize() {
         let total = fixture.source.statements().len();
         let mut history = SessionHistory::new();
         history.realize(&fixture.source);
-        assert!(history.align(&fixture.source).run_plans().next().is_none());
+        assert!(history.align(&fixture.source).run_steps().next().is_none());
 
         for index in edit_points(total) {
             let edited = insert_probe(&fixture.source, index);
             history.realize(&edited);
             let plan = history.align(&edited);
             assert!(
-                plan.run_plans().next().is_none(),
+                plan.run_steps().next().is_none(),
                 "{} @{index}: 수렴하지 않았다 {}",
                 fixture.name,
                 actions(&plan)
@@ -232,23 +226,23 @@ fn going_back_and_forth_between_two_versions_stays_sharp() {
             history.realize(first);
             let plan = history.align(first);
             assert!(
-                plan.run_plans().next().is_none(),
+                plan.run_steps().next().is_none(),
                 "{} round {round} A: {}",
                 fixture.name,
                 actions(&plan)
             );
             // 지금 실현된 것은 A다. B는 split 자리에서 갈라진다.
-            assert_eq!(history.align(&second).summary.prefix_len, split, "{}", fixture.name);
+            assert_eq!(history.align(&second).prefix_len, split, "{}", fixture.name);
 
             history.realize(&second);
             let plan = history.align(&second);
             assert!(
-                plan.run_plans().next().is_none(),
+                plan.run_steps().next().is_none(),
                 "{} round {round} B: {}",
                 fixture.name,
                 actions(&plan)
             );
-            assert_eq!(history.align(first).summary.prefix_len, split, "{}", fixture.name);
+            assert_eq!(history.align(first).prefix_len, split, "{}", fixture.name);
         }
 
         assert_eq!(history.statement_count(), second.statements().len());
@@ -261,7 +255,7 @@ fn a_poisoned_session_runs_everything() {
         let mut history = realized(&fixture.source);
         history.poison();
         let plan = history.align(&fixture.source);
-        assert_eq!(plan.summary.run, plan.summary.total, "{}", fixture.name);
+        assert_eq!(plan.summary().run, plan.summary().total, "{}", fixture.name);
     }
 }
 
@@ -270,50 +264,24 @@ fn downgrade_from_zero_turns_the_whole_plan_into_run() {
     for fixture in corpus() {
         let history = realized(&fixture.source);
         let mut plan = history.align(&fixture.source);
-        assert_eq!(plan.summary.run, 0, "{}", fixture.name);
+        assert_eq!(plan.summary().run, 0, "{}", fixture.name);
 
         plan.downgrade_from(0);
-        assert_eq!(plan.summary.run, plan.summary.total, "{}", fixture.name);
-        assert_eq!(plan.summary.reused, 0, "{}", fixture.name);
-        assert!(plan.plans.iter().all(|statement| statement.witness.is_none()));
-    }
-}
-
-/// summary의 절반은 파생값이고, `downgrade_from`이 그걸 손으로 다시 맞춘다.
-/// 본문과 어긋나면 호출자가 직접 센 숫자와 요약이 달라진다.
-#[test]
-fn the_summary_always_agrees_with_the_steps() {
-    for fixture in corpus() {
-        let history = realized(&fixture.source);
-        let total = fixture.source.statements().len();
-        for index in edit_points(total) {
-            let mut plan = history.align(&fixture.source);
-            plan.downgrade_from(index);
-
-            let where_ = format!("{} @{index}", fixture.name);
-            let run = plan.plans.iter().filter(|s| s.action == Run).count();
-            assert_eq!(plan.summary.total, plan.plans.len(), "{where_}");
-            assert_eq!(plan.summary.run, run, "{where_}");
-            assert_eq!(plan.summary.reused, plan.summary.total - run, "{where_}");
-            assert_eq!(
-                plan.summary.first_run,
-                plan.plans.iter().find(|s| s.action == Run).map(|s| s.index),
-                "{where_}"
-            );
-        }
+        assert_eq!(plan.summary().run, plan.summary().total, "{}", fixture.name);
+        assert_eq!(plan.summary().reused, 0, "{}", fixture.name);
     }
 }
 
 #[test]
-fn run_plans_is_the_run_subset_in_source_order() {
+fn run_steps_is_the_run_subset_in_source_order() {
     for fixture in corpus() {
         let history = realized(&head(&fixture.source, 1));
         let plan = history.align(&fixture.source);
 
-        let runs: Vec<usize> = plan.run_plans().map(|statement| statement.index).collect();
-        assert_eq!(runs.len(), plan.summary.run, "{}", fixture.name);
+        let runs: Vec<usize> = plan.run_steps().map(|statement| statement.index).collect();
+        assert_eq!(runs.len(), plan.summary().run, "{}", fixture.name);
         assert!(runs.windows(2).all(|pair| pair[0] < pair[1]), "{}", fixture.name);
-        assert!(runs.iter().all(|index| plan.plans[*index].action == Run));
+        assert!(runs.iter().all(|index| plan.steps[*index].action == Run));
     }
 }
 
@@ -330,13 +298,13 @@ fn reuse_report_for_a_bottom_edit() {
         let history = realized(&fixture.source);
         let plan = history.align(&edited);
 
-        assert_eq!(plan.summary.prefix_len, bottom, "{}", fixture.name);
+        assert_eq!(plan.prefix_len, bottom, "{}", fixture.name);
         report.push_str(&format!(
             "  {:<34} {:>4}/{:<4} 재사용  ({:>3}%)\n",
             fixture.name,
-            plan.summary.reused,
-            plan.summary.total,
-            100 * plan.summary.reused / plan.summary.total,
+            plan.summary().reused,
+            plan.summary().total,
+            100 * plan.summary().reused / plan.summary().total,
         ));
     }
     println!("{report}");

@@ -57,7 +57,7 @@ pub fn step(scenario: &str, file: &str) -> PythonSource {
 /// 열 개 넘는 statement의 판정을 `Vec<Action>`으로 비교하면 어디가 어긋났는지
 /// 눈으로 못 찾는다. 자리마다 한 글자면 index를 세어서 찾을 수 있다.
 pub fn actions(plan: &AlignmentPlan) -> String {
-    plan.plans
+    plan.steps
         .iter()
         .map(|statement| match statement.action {
             Action::Reuse => '.',
@@ -67,7 +67,7 @@ pub fn actions(plan: &AlignmentPlan) -> String {
 }
 
 pub fn reasons(plan: &AlignmentPlan) -> Vec<DecisionReason> {
-    plan.plans
+    plan.steps
         .iter()
         .map(|statement| statement.reason.clone())
         .collect()
@@ -76,7 +76,7 @@ pub fn reasons(plan: &AlignmentPlan) -> Vec<DecisionReason> {
 /// 판정과 원문 첫 줄을 나란히 — 기대값이 어긋났을 때 눈으로 확인하는 용도다.
 pub fn explain(plan: &AlignmentPlan, code: &PythonSource) -> String {
     let mut out = String::new();
-    for statement in &plan.plans {
+    for statement in &plan.steps {
         let text = String::from_utf8_lossy(code.slice(statement.range));
         let first_line = text.lines().next().unwrap_or("").trim_end();
         out.push_str(&format!(
@@ -175,7 +175,7 @@ pub fn cell_of_statement(source: &PythonSource) -> Vec<usize> {
 /// `cells`는 plan을 낳은 그 소스의 [`cell_of_statement`] 결과여야 한다.
 pub fn cell_reuse(plan: &AlignmentPlan, cells: &[usize]) -> (usize, usize) {
     let mut run: Vec<usize> = plan
-        .plans
+        .steps
         .iter()
         .filter(|statement| statement.action == Action::Run)
         .map(|statement| cells[statement.index])

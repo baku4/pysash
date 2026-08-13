@@ -20,7 +20,7 @@ fn session(pushed: &[&str]) -> SessionHistory {
 fn actions(history: &SessionHistory, code: &str) -> Vec<Action> {
     history
         .align(&source(code))
-        .plans
+        .steps
         .iter()
         .map(|plan| plan.action)
         .collect()
@@ -29,14 +29,14 @@ fn actions(history: &SessionHistory, code: &str) -> Vec<Action> {
 fn reasons(history: &SessionHistory, code: &str) -> Vec<DecisionReason> {
     history
         .align(&source(code))
-        .plans
+        .steps
         .iter()
         .map(|plan| plan.reason.clone())
         .collect()
 }
 
 fn nothing_to_run(history: &SessionHistory, code: &str) -> bool {
-    history.align(&source(code)).run_plans().next().is_none()
+    history.align(&source(code)).run_steps().next().is_none()
 }
 
 /// 세션이 소스의 순수 prefix면 그만큼 재사용하고 나머지만 실행한다.
@@ -59,8 +59,8 @@ fn re_aligning_the_same_source_reuses_everything() {
     let history = session(&["import os\n", "x = 1\nprint(x)\n"]);
     assert!(nothing_to_run(&history, "import os\nx = 1\nprint(x)\n"));
     let plan = history.align(&source("import os\nx = 1\nprint(x)\n"));
-    assert_eq!(plan.summary.reused, 3);
-    assert_eq!(plan.summary.residue_len, 0);
+    assert_eq!(plan.summary().reused, 3);
+    assert_eq!(plan.residue_len, 0);
 }
 
 #[test]
@@ -83,8 +83,8 @@ fn an_empty_session_runs_everything() {
 fn a_reordered_source_has_no_prefix_and_runs_entirely() {
     let history = session(&["x = 1\n", "y = x\n"]);
     let plan = history.align(&source("y = x\nx = 1\n"));
-    assert_eq!(plan.summary.prefix_len, 0);
-    assert!(plan.plans.iter().all(|p| p.action == Run));
+    assert_eq!(plan.prefix_len, 0);
+    assert!(plan.steps.iter().all(|p| p.action == Run));
 }
 
 /// 편집 지점 위라도, 그 실행이 남긴 것을 뒤의 실행이 건드렸으면 재사용할 수 없다.
@@ -215,7 +215,7 @@ fn reflective_residue_runs_everything() {
     ]);
     let code = "import builtins\nn = len('abc')\n";
     let plan = history.align(&source(code));
-    assert!(plan.plans.iter().all(|p| p.action == Run));
+    assert!(plan.steps.iter().all(|p| p.action == Run));
 
     // 반사적 구문은 입력 소스가 아니라 세션이 과거에 받은 소스에 있다 — source
     // 인덱스가 함께 와야 원문을 짚을 수 있다.
@@ -229,9 +229,9 @@ fn reflective_residue_runs_everything() {
 fn a_diverged_session_reports_its_residue() {
     let history = session(&["x = 1\n", "y = 2\n"]);
     let plan = history.align(&source("x = 1\n"));
-    // 갈라졌다는 사실은 summary가 말한다. 진단으로 한 번 더 말하지 않는다 —
+    // 갈라졌다는 사실은 residue_len이 말한다. 진단으로 한 번 더 말하지 않는다 —
     // 같은 것을 두 군데서 관리하게 되기 때문이다.
-    assert_eq!(plan.summary.residue_len, 1);
+    assert_eq!(plan.residue_len, 1);
     assert!(plan.diagnostics.is_empty());
 }
 
@@ -254,15 +254,15 @@ fn the_edit_loop_converges_by_realizing() {
     let edited = source("import math\nr = 3.0\narea = math.pi * r ** 2\n");
 
     let plan = history.align(&edited);
-    let acts: Vec<Action> = plan.plans.iter().map(|p| p.action).collect();
+    let acts: Vec<Action> = plan.steps.iter().map(|p| p.action).collect();
     // import는 재사용된다 — 뒤의 어떤 실행도 math를 건드리지 않았다.
     assert_eq!(acts, [Reuse, Run, Run]);
-    assert_eq!(plan.plans[1].reason, DecisionReason::StatementChanged);
+    assert_eq!(plan.steps[1].reason, DecisionReason::StatementChanged);
 
     history.realize(&edited);
     let plan = history.align(&edited);
-    assert!(plan.run_plans().next().is_none());
-    assert_eq!(plan.summary.reused, 3);
+    assert!(plan.run_steps().next().is_none());
+    assert_eq!(plan.summary().reused, 3);
     // 밀려난 r = 2.0 하나가 residue로 남는다.
     assert_eq!(history.residue_count(), 1);
 }
@@ -279,7 +279,7 @@ fn disturbed_prefix_runs_converge_after_realize() {
     ]);
     let code = source("K = 10\ndef f():\n    return K * 2\ny = f()\n");
     assert_eq!(
-        history.align(&code).plans.iter().map(|p| p.action).collect::<Vec<_>>(),
+        history.align(&code).steps.iter().map(|p| p.action).collect::<Vec<_>>(),
         [Run, Reuse, Run]
     );
     history.realize(&code);
@@ -304,7 +304,7 @@ fn growing_the_source_converges_with_realize() {
 
     let grown = source("import math\nr = 2.0\narea = math.pi * r ** 2\n");
     let plan = history.align(&grown);
-    assert_eq!(plan.summary.reused, 2);
+    assert_eq!(plan.summary().reused, 2);
     history.realize(&grown);
     assert!(nothing_to_run(&history, "import math\nr = 2.0\narea = math.pi * r ** 2\n"));
     assert_eq!(history.residue_count(), 0);
@@ -334,24 +334,15 @@ fn reuse_never_appears_beyond_the_prefix() {
     ];
     for (pushed, code) in fixtures {
         let plan = session(pushed).align(&source(code));
-        for statement in &plan.plans {
+        for statement in &plan.steps {
             if statement.action == Reuse {
                 assert!(
-                    statement.index < plan.summary.prefix_len,
+                    statement.index < plan.prefix_len,
                     "Reuse beyond prefix: {code:?}"
                 );
             }
         }
     }
-}
-
-#[test]
-fn reused_steps_carry_their_witness() {
-    let history = session(&["x = 1\n", "y = x\n"]);
-    let plan = history.align(&source("x = 1\ny = x\nz = y\n"));
-    assert_eq!(plan.plans[0].witness, Some(0));
-    assert_eq!(plan.plans[1].witness, Some(1));
-    assert_eq!(plan.plans[2].witness, None);
 }
 
 #[test]
@@ -383,7 +374,7 @@ fn session_only_names_are_flagged_as_unresolved() {
     let plan = history.align(&source("out = df + 1\n"));
     // df는 이 소스 어디에서도 바인딩되지 않는다 — 세션에서는 돌지만 fresh run에서는
     // 재현되지 않는 조각이라는 신호다.
-    assert!(plan.plans[0].diagnostics.iter().any(
+    assert!(plan.steps[0].diagnostics.iter().any(
         |d| matches!(d, StatementDiagnostic::UnresolvedReference { name } if &**name == "df")
     ));
 }
@@ -392,7 +383,7 @@ fn session_only_names_are_flagged_as_unresolved() {
 fn self_contained_sources_have_no_unresolved_reads() {
     let history = SessionHistory::new();
     let plan = history.align(&source("import os\nx = 1\ny = x + len(os.sep)\nprint(y)\n"));
-    assert!(plan.plans.iter().all(|p| p.diagnostics.is_empty()));
+    assert!(plan.steps.iter().all(|p| p.diagnostics.is_empty()));
 }
 
 #[test]
@@ -400,12 +391,11 @@ fn downgrade_from_turns_the_tail_into_run() {
     let history = session(&["x = 1\n", "y = 2\n", "z = 3\n"]);
     let mut plan = history.align(&source("x = 1\ny = 2\nz = 3\n"));
     plan.downgrade_from(1);
-    let acts: Vec<Action> = plan.plans.iter().map(|p| p.action).collect();
+    let acts: Vec<Action> = plan.steps.iter().map(|p| p.action).collect();
     assert_eq!(acts, [Reuse, Run, Run]);
-    assert_eq!(plan.summary.reused, 1);
-    assert_eq!(plan.summary.run, 2);
-    assert_eq!(plan.summary.first_run, Some(1));
-    assert_eq!(plan.plans[1].witness, None);
+    assert_eq!(plan.summary().reused, 1);
+    assert_eq!(plan.summary().run, 2);
+    assert_eq!(plan.summary().first_run, Some(1));
     // 판정의 기록은 남는다 — 재사용 가능했지만 호출자가 내렸다.
-    assert_eq!(plan.plans[1].reason, DecisionReason::ReusableExecution);
+    assert_eq!(plan.steps[1].reason, DecisionReason::ReusableExecution);
 }

@@ -32,17 +32,17 @@
 //! let plan = history.align(&grown);
 //!
 //! // 앞 두 줄은 세션이 방금 실행한 바로 그것이다. 다시 돌리지 않는다.
-//! let actions: Vec<Action> = plan.plans.iter().map(|p| p.action).collect();
+//! let actions: Vec<Action> = plan.steps.iter().map(|p| p.action).collect();
 //! assert_eq!(actions, [Action::Reuse, Action::Reuse, Action::Run]);
 //!
 //! // 3. Run인 것만 위에서 아래로 실행한다. 실행은 이 crate 밖의 일이다.
-//! for entry in plan.run_plans() {
+//! for entry in plan.run_steps() {
 //!     let _source_text = std::str::from_utf8(grown.slice(entry.range)).unwrap();
 //! }
 //!
 //! // 4. 계획을 실행 완료했으면 realize로 기록한다. 이제 이 소스가 실현 열이다.
 //! history.realize(&grown);
-//! assert!(history.align(&grown).run_plans().next().is_none());
+//! assert!(history.align(&grown).run_steps().next().is_none());
 //!
 //! // 5. 이제 가운데 줄을 고쳐서 다시 준다.
 //! let edited = PythonSource::parse("import math\nr = 3.0\narea = math.pi * r ** 2\n")?;
@@ -50,14 +50,14 @@
 //!
 //! // import는 그대로 재사용된다 — 그 뒤의 어떤 실행도 math를 건드리지 않았다.
 //! // r부터는 다시 실행한다. 편집 지점 아래는 전부 낡았기 때문이다.
-//! let actions: Vec<Action> = plan.plans.iter().map(|p| p.action).collect();
+//! let actions: Vec<Action> = plan.steps.iter().map(|p| p.action).collect();
 //! assert_eq!(actions, [Action::Reuse, Action::Run, Action::Run]);
-//! assert_eq!(plan.plans[1].reason, DecisionReason::StatementChanged);
+//! assert_eq!(plan.steps[1].reason, DecisionReason::StatementChanged);
 //!
 //! // 6. 실행하고 realize하면 루프는 그 자리에서 수렴한다.
 //! //    영구히 못 쓰게 되는 세션은 없다.
 //! history.realize(&edited);
-//! assert!(history.align(&edited).run_plans().next().is_none());
+//! assert!(history.align(&edited).run_steps().next().is_none());
 //! # Ok::<(), pysash::source::ParseError>(())
 //! ```
 

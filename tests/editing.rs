@@ -30,19 +30,17 @@ fn appending_below_reuses_everything_above() {
 
     let plan = history.align(&grown);
     assert_eq!(actions(&plan), "..........XX", "{}", explain(&plan, &grown));
-    assert_eq!(plan.summary.prefix_len, 10);
-    assert_eq!(plan.summary.residue_len, 0);
-    assert_eq!(plan.summary.first_run, Some(10));
-    assert_eq!(plan.plans[10].reason, DecisionReason::NoMatchingExecution);
+    assert_eq!(plan.prefix_len, 10);
+    assert_eq!(plan.residue_len, 0);
+    assert_eq!(plan.summary().first_run, Some(10));
+    assert_eq!(plan.steps[10].reason, DecisionReason::NoMatchingExecution);
     // 밀려난 실행이 없으니 plan 전체에 붙일 주석도 없다.
     assert!(plan.diagnostics.is_empty());
-    // 재사용의 근거는 실현 열의 같은 자리 실행이다.
-    assert_eq!(plan.plans[3].witness, Some(3));
     // `kept_df.to_csv(...)`는 외부 세계를 바꾼다 — 호출자가 후처리할 수 있게 분류된다.
-    assert_eq!(plan.plans[10].effect, Effect::ExternalWrite);
+    assert_eq!(plan.steps[10].effect, Effect::ExternalWrite);
 
     history.realize(&grown);
-    assert!(history.align(&grown).run_plans().next().is_none());
+    assert!(history.align(&grown).run_steps().next().is_none());
 }
 
 /// 맨 아래 한 줄만 고친 경우. 밀려나는 실행은 옛 `print` 하나뿐인데, `print`는
@@ -55,10 +53,10 @@ fn editing_only_the_last_line_reuses_everything_above() {
 
     let plan = history.align(&edited);
     assert_eq!(actions(&plan), ".........X", "{}", explain(&plan, &edited));
-    assert_eq!(plan.summary.prefix_len, 9);
-    assert_eq!(plan.summary.residue_len, 1);
-    assert_eq!(plan.plans[9].reason, DecisionReason::StatementChanged);
-    // 밀려난 실행이 있다는 사실은 summary가 말한다. 그것 말고 붙일 주석은 없다.
+    assert_eq!(plan.prefix_len, 9);
+    assert_eq!(plan.residue_len, 1);
+    assert_eq!(plan.steps[9].reason, DecisionReason::StatementChanged);
+    // 밀려난 실행이 있다는 사실은 residue_len이 말한다. 그것 말고 붙일 주석은 없다.
     assert!(plan.diagnostics.is_empty());
 }
 
@@ -77,8 +75,8 @@ fn editing_a_constant_near_the_top_reruns_from_there() {
 
     let plan = history.align(&edited);
     assert_eq!(actions(&plan), ".X..XXXXXX", "{}", explain(&plan, &edited));
-    assert_eq!(plan.summary.prefix_len, 5);
-    assert_eq!(plan.summary.residue_len, 5);
+    assert_eq!(plan.prefix_len, 5);
+    assert_eq!(plan.residue_len, 5);
 
     let reasons = reasons(&plan);
     assert_eq!(reasons[0], DecisionReason::ReusableExecution);
@@ -105,8 +103,8 @@ fn inserting_a_cell_shifts_everything_below_into_run() {
 
     let plan = history.align(&edited);
     assert_eq!(actions(&plan), ".X..X.XXXXX", "{}", explain(&plan, &edited));
-    assert_eq!(plan.summary.prefix_len, 6);
-    assert_eq!(plan.summary.residue_len, 4);
+    assert_eq!(plan.prefix_len, 6);
+    assert_eq!(plan.residue_len, 4);
 
     let reasons = reasons(&plan);
     // 임계값(5)은 아무도 건드리지 않았다.
@@ -128,9 +126,9 @@ fn deleting_a_cell_near_the_bottom_keeps_the_head() {
 
     let plan = history.align(&edited);
     assert_eq!(actions(&plan), "........X", "{}", explain(&plan, &edited));
-    assert_eq!(plan.summary.prefix_len, 8);
-    assert_eq!(plan.summary.residue_len, 2);
-    assert_eq!(plan.plans[8].reason, DecisionReason::StatementChanged);
+    assert_eq!(plan.prefix_len, 8);
+    assert_eq!(plan.residue_len, 2);
+    assert_eq!(plan.steps[8].reason, DecisionReason::StatementChanged);
 }
 
 /// 맨 위 두 줄의 순서만 바꾼 경우. 내용은 그대로지만 index 0의 statement가 달라져
@@ -143,8 +141,8 @@ fn reordering_two_imports_destroys_the_prefix() {
 
     let plan = history.align(&edited);
     assert_eq!(actions(&plan), "XXXXXXXXXX", "{}", explain(&plan, &edited));
-    assert_eq!(plan.summary.prefix_len, 0);
-    assert_eq!(plan.summary.reused, 0);
+    assert_eq!(plan.prefix_len, 0);
+    assert_eq!(plan.summary().reused, 0);
 
     let reasons = reasons(&plan);
     assert_eq!(reasons[0], DecisionReason::StatementChanged);
@@ -168,8 +166,8 @@ fn reformatting_costs_nothing() {
 
     let plan = history.align(&edited);
     assert_eq!(actions(&plan), "..........", "{}", explain(&plan, &edited));
-    assert_eq!(plan.summary.prefix_len, 10);
-    assert_eq!(plan.summary.residue_len, 0);
+    assert_eq!(plan.prefix_len, 10);
+    assert_eq!(plan.residue_len, 0);
 }
 
 /// **핵심 시나리오** — 아래로 내려가 고치고, 다시 위로 올라가 되돌린다.
@@ -185,23 +183,23 @@ fn going_back_and_forth_converges_at_each_realize() {
 
     let mut history = SessionHistory::new();
     history.realize(&base);
-    assert!(history.align(&base).run_plans().next().is_none());
+    assert!(history.align(&base).run_steps().next().is_none());
 
     // 내려가서 임계값을 고친다.
     let plan = history.align(&edited);
     assert_eq!(actions(&plan), ".X..XXXXXX", "{}", explain(&plan, &edited));
     history.realize(&edited);
-    assert!(history.align(&edited).run_plans().next().is_none());
+    assert!(history.align(&edited).run_steps().next().is_none());
     assert_eq!(history.residue_count(), 5);
 
     // 다시 올라가서 되돌린다 — 판정이 대칭이다.
     let plan = history.align(&base);
     assert_eq!(actions(&plan), ".X..XXXXXX", "{}", explain(&plan, &base));
-    assert_eq!(plan.summary.prefix_len, 5);
-    assert_eq!(plan.summary.residue_len, 10);
+    assert_eq!(plan.prefix_len, 5);
+    assert_eq!(plan.residue_len, 10);
 
     history.realize(&base);
-    assert!(history.align(&base).run_plans().next().is_none());
+    assert!(history.align(&base).run_steps().next().is_none());
     assert_eq!(history.statement_count(), 10);
     assert_eq!(history.residue_count(), 10);
 }
@@ -216,7 +214,7 @@ fn the_caller_can_downgrade_from_the_external_read() {
     assert_eq!(actions(&plan), "..........");
 
     let read = plan
-        .plans
+        .steps
         .iter()
         .find(|statement| statement.effect == Effect::ExternalRead)
         .map(|statement| statement.index)
@@ -225,11 +223,10 @@ fn the_caller_can_downgrade_from_the_external_read() {
 
     plan.downgrade_from(read);
     assert_eq!(actions(&plan), "......XXXX");
-    assert_eq!(plan.summary.reused, 6);
-    assert_eq!(plan.summary.first_run, Some(6));
-    assert_eq!(plan.plans[6].witness, None);
+    assert_eq!(plan.summary().reused, 6);
+    assert_eq!(plan.summary().first_run, Some(6));
     // 판정의 기록은 남는다 — 재사용 가능했지만 호출자가 내렸다.
-    assert_eq!(plan.plans[6].reason, DecisionReason::ReusableExecution);
+    assert_eq!(plan.steps[6].reason, DecisionReason::ReusableExecution);
 }
 
 /// 실행이 중간에 실패해 세션을 더는 믿을 수 없으면 이후는 전부 Run이다.
@@ -252,7 +249,7 @@ fn a_self_contained_source_has_no_statement_diagnostics() {
     let base = step("contig_qc", BASE);
     let plan = SessionHistory::new().align(&base);
     assert!(plan
-        .plans
+        .steps
         .iter()
         .all(|statement| statement.diagnostics.is_empty()));
 }
@@ -271,11 +268,11 @@ fn a_star_import_inside_the_prefix_is_harmless() {
 
     let plan = history.align(&edited);
     assert_eq!(actions(&plan), ".....XXX", "{}", explain(&plan, &edited));
-    assert_eq!(plan.summary.prefix_len, 5);
-    assert_eq!(plan.summary.residue_len, 3);
+    assert_eq!(plan.prefix_len, 5);
+    assert_eq!(plan.residue_len, 3);
 
     // opaque로 분류되어 있지만 prefix 안이라 재사용된다.
-    assert_eq!(plan.plans[4].effect, Effect::Opaque);
+    assert_eq!(plan.steps[4].effect, Effect::Opaque);
     assert!(!has_diagnostic(&plan, |d| matches!(
         d,
         SessionDiagnostic::OpaqueResidue { .. }
@@ -283,7 +280,7 @@ fn a_star_import_inside_the_prefix_is_harmless() {
 
     // `parse_config`는 이 소스 어디에서도 바인딩되지 않는다 — 세션에서만 도는
     // 조각이라는 신호다.
-    assert!(plan.plans[6].diagnostics.iter().any(|diagnostic| matches!(
+    assert!(plan.steps[6].diagnostics.iter().any(|diagnostic| matches!(
         diagnostic,
         StatementDiagnostic::UnresolvedReference { name } if &**name == "parse_config"
     )));
@@ -298,8 +295,8 @@ fn a_star_import_pushed_out_of_the_prefix_runs_everything() {
 
     let plan = history.align(&edited);
     assert_eq!(actions(&plan), "XXXXXXXX", "{}", explain(&plan, &edited));
-    assert_eq!(plan.summary.prefix_len, 3);
-    assert_eq!(plan.summary.residue_len, 5);
+    assert_eq!(plan.prefix_len, 3);
+    assert_eq!(plan.residue_len, 5);
     assert!(has_diagnostic(&plan, |d| matches!(
         d,
         SessionDiagnostic::OpaqueResidue { .. }
@@ -332,8 +329,8 @@ fn an_accumulating_list_reruns_its_producer() {
 
     let plan = history.align(&edited);
     assert_eq!(actions(&plan), "X.XXXX", "{}", explain(&plan, &edited));
-    assert_eq!(plan.summary.prefix_len, 4);
-    assert_eq!(plan.summary.residue_len, 2);
+    assert_eq!(plan.prefix_len, 4);
+    assert_eq!(plan.residue_len, 2);
 
     let reasons = reasons(&plan);
     assert_eq!(
@@ -362,8 +359,8 @@ fn editing_a_helper_function_leaves_run_gaps() {
 
     let plan = history.align(&edited);
     assert_eq!(actions(&plan), "..X.XXX", "{}", explain(&plan, &edited));
-    assert_eq!(plan.summary.prefix_len, 4);
-    assert_eq!(plan.summary.residue_len, 3);
+    assert_eq!(plan.prefix_len, 4);
+    assert_eq!(plan.residue_len, 3);
 
     let reasons = reasons(&plan);
     assert_eq!(reasons[0], DecisionReason::ReusableExecution);
@@ -375,5 +372,5 @@ fn editing_a_helper_function_leaves_run_gaps() {
     );
     assert_eq!(reasons[3], DecisionReason::ReusableExecution);
     assert_eq!(reasons[4], DecisionReason::StatementChanged);
-    assert_eq!(plan.plans[2].effect, Effect::ExternalRead);
+    assert_eq!(plan.steps[2].effect, Effect::ExternalRead);
 }

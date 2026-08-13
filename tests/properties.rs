@@ -34,22 +34,16 @@ fn session(pushed: &[&str]) -> SessionHistory {
 }
 
 proptest! {
-    /// Reuse는 prefix 밖에서 절대 나오지 않고, witness는 Reuse에만 붙는다.
+    /// Reuse는 prefix 밖에서 절대 나오지 않는다.
     #[test]
     fn reuse_stays_inside_the_prefix(pushed in statements(), incoming in statements()) {
         let history = session(&pushed);
         let code = PythonSource::parse(&incoming.concat()).expect("valid");
         let plan = history.align(&code);
 
-        prop_assert_eq!(plan.summary.reused + plan.summary.run, plan.summary.total);
-        for statement in &plan.plans {
-            match statement.action {
-                Action::Reuse => {
-                    prop_assert!(statement.index < plan.summary.prefix_len);
-                    prop_assert_eq!(statement.witness, Some(statement.index));
-                }
-                Action::Run => prop_assert_eq!(statement.witness, None),
-            }
+        prop_assert_eq!(plan.summary().reused + plan.summary().run, plan.summary().total);
+        for step in plan.steps.iter().filter(|step| step.action == Action::Reuse) {
+            prop_assert!(step.index < plan.prefix_len);
         }
     }
 
@@ -61,9 +55,9 @@ proptest! {
         history.realize(&code);
         let plan = history.align(&code);
         prop_assert!(
-            plan.run_plans().next().is_none(),
+            plan.run_steps().next().is_none(),
             "not converged: {:?}",
-            plan.plans.iter().map(|p| p.action).collect::<Vec<_>>()
+            plan.steps.iter().map(|p| p.action).collect::<Vec<_>>()
         );
     }
 

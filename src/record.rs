@@ -33,7 +33,7 @@ impl SessionHistory {
         // 호출자가 본 것과 같은 계획. align은 순수하므로 결과가 같다.
         let plan = self.align(code);
         let statements = code.statements();
-        let matched = plan.summary.prefix_len;
+        let matched = plan.prefix_len;
 
         let source = self.sources.len();
         self.sources.push(code.clone());
@@ -44,9 +44,9 @@ impl SessionHistory {
         // prefix 안에서 오염 때문에 Run이 된 것들은 방금 다시 실행되었다 — 그
         // 자리를 새 실행으로 바꿔 단다. 옛 실행을 그대로 두면 이미 지나간 오염이
         // 영원히 그 자리를 Run으로 만든다. 재사용된 것은 원래 실행 그대로다.
-        for statement_plan in plan.plans.iter().take(matched) {
-            if statement_plan.action == Action::Run {
-                let index = statement_plan.index;
+        for step in plan.steps.iter().take(matched) {
+            if step.action == Action::Run {
+                let index = step.index;
                 let seq = self.executions;
                 self.executions += 1;
                 // canonical이 같으므로 graph/summaries에 더할 새 정보는 없다.

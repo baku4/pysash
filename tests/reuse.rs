@@ -75,11 +75,11 @@ fn measure(fixture: &support::Fixture, index: usize) -> Edit {
     let plan = history.align(&edited);
 
     assert_eq!(
-        plan.summary.prefix_len, index,
+        plan.prefix_len, index,
         "{} @{index}: 갈라지는 지점이 어긋났다",
         fixture.name
     );
-    for statement in plan.plans.iter().filter(|s| s.index >= index) {
+    for statement in plan.steps.iter().filter(|s| s.index >= index) {
         assert_eq!(
             statement.action,
             Action::Run,
