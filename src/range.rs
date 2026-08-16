@@ -1,7 +1,4 @@
-/// raw bytes 안의 반열린 구간 `[start, end)`. UTF-8 byte offset이다.
-///
-/// `PythonSource`가 기억하는 원본 바이트열 기준이며, 이 구간을 잘라내 다시 파싱하면
-/// 같은 statement가 나온다.
+/// A half-open UTF-8 byte range in the original [`PythonSource`](crate::source::PythonSource).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Range {
     pub start: u32,
@@ -9,6 +6,7 @@ pub struct Range {
 }
 
 impl Range {
+    /// Creates the half-open range `[start, end)`.
     pub fn new(start: u32, end: u32) -> Self {
         Self { start, end }
     }

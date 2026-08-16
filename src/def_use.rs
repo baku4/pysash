@@ -1,21 +1,16 @@
 use super::statement_facts::StatementFacts;
 
-/// 이름 사이의 연결 기억 — 지금 어떤 이름이 살아 있고, 어떤 이름들이 같은 객체를
-/// 가리킬 수 있는가.
+/// Tracks live names and time-indexed edges between possible aliases.
 ///
-/// 별칭 간선은 생긴 실행 순번과 함께 쌓이기만 한다. 폐포는 언제나 "그 시점까지
-/// 존재한 간선"으로만 계산한다 — 나중에 생긴 별칭이 그 전에 일어난 변경을 소급해서
-/// 전파하면, 이미 지나간 실행의 오염이 부풀어 편집 루프가 수렴하지 않는다.
+/// Alias closure uses only edges that existed at the queried time.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct DefUseGraph {
-    /// 현재 바인딩되어 있는 이름들. 바인딩 순서를 유지한다.
     live: Vec<String>,
-    /// 별칭 간선과 그것이 생긴 실행 순번.
     edges: Vec<(String, String, usize)>,
 }
 
 impl DefUseGraph {
-    /// 실행 하나가 남긴 바인딩·삭제·별칭을 기록한다.
+    /// Records bindings, deletions, and aliases from one execution.
     pub fn record(&mut self, facts: &StatementFacts, seq: usize) {
         for name in &facts.binds {
             if !self.live.iter().any(|live| **live == **name) {
@@ -34,8 +29,7 @@ impl DefUseGraph {
         self.live.iter().map(String::as_str)
     }
 
-    /// `before` 이전에 존재한 별칭 간선만으로, 주어진 이름들과 같은 객체를 가리킬
-    /// 수 있는 이름을 전부 추가한다.
+    /// Adds aliases reachable through edges created before `before`.
     pub fn alias_closure(&self, names: &mut Vec<String>, before: usize) {
         loop {
             let mut grew = false;
@@ -118,7 +112,7 @@ mod tests {
         let mut graph = DefUseGraph::default();
         graph.record(&facts(&["p"], &[], &[("p", "a")]), 3);
         let mut names = vec!["a".to_string()];
-        // 순번 2 시점의 변경은 아직 존재하지 않던 별칭을 타고 번지지 못한다.
+        // A disturbance at sequence 2 cannot follow an alias created at sequence 3.
         graph.alias_closure(&mut names, 2);
         assert_eq!(names, ["a"]);
     }

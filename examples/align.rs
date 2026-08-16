@@ -1,71 +1,82 @@
-//! `cargo run --example align`
+//! An end-to-end edit loop for `SessionHistory`.
 
 use pysash::SessionHistory;
-use pysash::plan::Action;
-use pysash::source::PythonSource;
+use pysash::plan::{Action, AlignmentPlan};
+use pysash::source::{ParseError, PythonSource};
 
-fn main() {
-    println!("=== 이어붙이기 ===");
+fn main() -> Result<(), ParseError> {
+    // Parse a source prefix that has already completed successfully in Python.
+    let prefix = PythonSource::parse("import math\nradius = 2.0\n")?;
+
+    // Push that successful execution into a new linear session history.
     let mut history = SessionHistory::new();
-    for chunk in [
-        "import pandas as pd\n",
-        "df = pd.read_csv('a.csv')\n",
-        "df2 = df.dropna()\n",
-    ] {
-        history.push(&PythonSource::parse(chunk).unwrap());
-    }
-    report(&history, &parse(SCRIPT));
+    history.push(&prefix);
 
-    println!("\n=== REPL에서 이것저것 해보다가 스크립트를 붙여넣기 ===");
-    let mut history = SessionHistory::new();
-    history.push(&PythonSource::parse("tmp = 1\ndel tmp\n").unwrap());
-    for chunk in ["import pandas as pd\n", "df = pd.read_csv('a.csv')\n"] {
-        history.push(&PythonSource::parse(chunk).unwrap());
-    }
-    report(&history, &parse(SCRIPT));
+    // Align the complete script and reuse the prefix already in the session.
+    let script = PythonSource::parse(SCRIPT)?;
+    let plan = history.align(&script);
+    assert_eq!(
+        actions(&plan),
+        [Action::Reuse, Action::Reuse, Action::Run, Action::Run]
+    );
 
-    println!("\n=== 가운데 줄 편집 — 1회차 ===");
-    let mut history = SessionHistory::new();
-    for chunk in [
-        "import pandas as pd\n",
-        "df = pd.read_csv('a.csv')\n",
-        "df2 = df.dropna()\nprint(df2.shape)\n",
-    ] {
-        history.push(&PythonSource::parse(chunk).unwrap());
-    }
-    let edited = parse(EDITED);
-    report(&history, &edited);
+    // Run each `Run` step in source order through the caller's Python runtime.
+    run_steps(&plan, &script);
 
-    println!("\n=== Run을 실행하고 realize한 뒤 — 2회차 ===");
+    // Realize the source only after every requested execution succeeds.
+    history.realize(&script);
+
+    // Aligning the realized source again converges to complete reuse.
+    assert!(history.align(&script).run_steps().next().is_none());
+
+    // Edit above the old run frontier while retaining the safe import prefix.
+    let edited = PythonSource::parse(EDITED)?;
+    let plan = history.align(&edited);
+    assert_eq!(
+        actions(&plan),
+        [Action::Reuse, Action::Run, Action::Run, Action::Run]
+    );
+    run_steps(&plan, &edited);
     history.realize(&edited);
-    report(&history, &edited);
+
+    // Record known source after an interrupted execution without poisoning unrelated reuse.
+    let interrupted = PythonSource::parse("radius = 99.0\nraise RuntimeError('stopped')\n")?;
+    history.record_partial(&interrupted);
+    assert_eq!(
+        actions(&history.align(&edited)),
+        [Action::Reuse, Action::Run, Action::Reuse, Action::Reuse]
+    );
+
+    // Poison the history only when unknown code may have changed the session.
+    history.poison();
+    assert!(
+        history
+            .align(&edited)
+            .steps
+            .iter()
+            .all(|step| step.action == Action::Run)
+    );
+
+    Ok(())
 }
 
-const SCRIPT: &str = "import pandas as pd\n\
-                      df = pd.read_csv('a.csv')\n\
-                      df2 = df.dropna()\n\
-                      print(df2.shape)\n";
+const SCRIPT: &str = "import math\n\
+                      radius = 2.0\n\
+                      area = math.pi * radius ** 2\n\
+                      print(area)\n";
 
-const EDITED: &str = "import pandas as pd\n\
-                      df = pd.read_csv('a.csv')\n\
-                      df2 = df.dropna().reset_index()\n\
-                      print(df2.shape)\n";
+const EDITED: &str = "import math\n\
+                      radius = 3.0\n\
+                      area = math.pi * radius ** 2\n\
+                      print(area)\n";
 
-fn parse(text: &str) -> PythonSource {
-    PythonSource::parse(text).unwrap()
+fn actions(plan: &AlignmentPlan) -> Vec<Action> {
+    plan.steps.iter().map(|step| step.action).collect()
 }
 
-fn report(history: &SessionHistory, code: &PythonSource) {
-    let plan = history.align(code);
-    let reused = plan.steps.len() - plan.run_steps().count();
-    println!("{}/{} 재사용", reused, plan.steps.len());
-
-    for entry in &plan.steps {
-        let text = String::from_utf8_lossy(code.slice(entry.range));
-        let mark = match entry.action {
-            Action::Reuse => "reuse",
-            Action::Run => "RUN  ",
-        };
-        println!("  {mark} {:<20?} {}", entry.reason, text.trim());
+fn run_steps(plan: &AlignmentPlan, source: &PythonSource) {
+    for step in plan.run_steps() {
+        let statement = String::from_utf8_lossy(source.slice(step.range));
+        println!("python> {}", statement.trim());
     }
 }

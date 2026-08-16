@@ -5,15 +5,14 @@ use super::SessionHistory;
 use super::plan::Action;
 
 impl SessionHistory {
+    /// Creates an empty, trusted session history.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// 성공한 실행 하나를 기록 끝에 잇는다.
+    /// Appends every statement from a successfully executed source.
     ///
-    /// 세션에 실제로 입력해서 성공한 것만 넣는다. 실행하지 않은 것을 넣으면
-    /// 기록이 거짓이 되고 판정도 따라서 틀린다. 어디까지 돌았는지 모르는 실행은
-    /// [`record_partial`](Self::record_partial)이 받는다.
+    /// The caller must not pass unexecuted or partially executed source.
     pub fn push(&mut self, code: &PythonSource) {
         for index in 0..code.statements().len() {
             let exec = self.record_execution(code, index);
@@ -21,26 +20,17 @@ impl SessionHistory {
         }
     }
 
-    /// 이 소스의 [`align`](SessionHistory::align) 계획을 실행 완료했음을 기록한다.
+    /// Records completion of this source's alignment plan and makes it the realized sequence.
     ///
-    /// 이제 이 소스가 실현 열이 된다 — 실현 밖으로 밀려난 옛 실행들은 residue로
-    /// 옮겨져 오염 계산의 재료로 남는다. plan을 인자로 받지 않고 내부에서 같은
-    /// 판정을 다시 계산하므로, 위조된 plan이 세션을 오염시키는 경로가 없다.
-    ///
-    /// 어떤 판정에도 닿을 수 없게 된 실행은 여기서 세션이 놓는다. 그래서 편집
-    /// 루프를 반복해도 실현 밖 실행이 자라기만 하지 않는다 — 어떤 statement의
-    /// [`plan::Action`](crate::plan::Action)도 그것 때문에 바뀌지 않는다.
+    /// The caller must execute every `Run` step in source order before calling this method.
     pub fn realize(&mut self, code: &PythonSource) {
-        // 호출자가 본 것과 같은 계획. align은 순수하므로 결과가 같다.
         let plan = self.align(code);
         let matched = plan.prefix_len;
 
         let displaced: Vec<ExecRef> = self.realized.drain(matched..).collect();
         self.residue.extend(displaced);
 
-        // prefix 안에서 오염 때문에 Run이 된 것들은 방금 다시 실행되었다 — 그
-        // 자리를 새 실행으로 바꿔 단다. 옛 실행을 그대로 두면 이미 지나간 오염이
-        // 영원히 그 자리를 Run으로 만든다. 재사용된 것은 원래 실행 그대로다.
+        // Re-executed prefix entries need new sequence numbers so old residue cannot affect them.
         for step in plan.steps.iter().take(matched) {
             if step.action == Action::Run {
                 let exec = self.record_execution(code, step.index);
@@ -54,28 +44,9 @@ impl SessionHistory {
         forget_inert(&mut self.residue, &self.realized, &self.summaries);
     }
 
-    /// 어디까지 돌았는지 모르는 실행 하나를 기록한다.
+    /// Records every statement as a possible effect of an incomplete execution.
     ///
-    /// 실행이 중간에 끊겼을 때 쓴다 — 예외로 멈췄거나, 사용자가 취소했거나,
-    /// 인터프리터가 죽었을 때다. 소스를 **통째로** residue에 넣는다: 효과는 남아
-    /// 있지만 더 이상 어떤 소스의 실행으로도 세지 않는다는 뜻이고, 그래서 이
-    /// 소스는 재사용의 근거가 되지 못하면서 오염 계산에는 전부 들어간다.
-    ///
-    /// 실제로 돈 것보다 넓게 기록하는 방향이므로 오염 상계는 넓어질 뿐 좁아지지
-    /// 않는다. 넓은 오염은 Run이 늘어날 뿐이다.
-    ///
-    /// [`poison`](Self::poison)과는 다른 상황이다. poison은 세션에 무슨 일이
-    /// 있었는지 **아무것도** 모를 때의 값이고, 여기서는 문제가 될 수 있는
-    /// statement의 집합을 정확히 알고 있다. 아는 만큼만 버리면 그 소스가 건드리지
-    /// 않은 이름들의 재사용은 살아남는다.
-    ///
-    /// 완주한 부분이 있으면 그쪽을 [`push`](Self::push)나
-    /// [`realize`](Self::realize)로 **먼저** 기록한다. 끊긴 실행이 뒤 순번을 받아야
-    /// 오염이 시간을 거스르지 않는다.
-    ///
-    /// [`realize`](Self::realize)와 마찬가지로 닿을 수 없게 된 실행은 여기서
-    /// 놓는다. 실현 열이 비어 있으면 재사용의 근거로 삼을 실행이 아예 없으므로,
-    /// 방금 넣은 것을 포함해 실현 밖 실행 전체가 그 자리에서 버려진다.
+    /// Record any known completed prefix first so this source receives later sequence numbers.
     pub fn record_partial(&mut self, code: &PythonSource) {
         for index in 0..code.statements().len() {
             let exec = self.record_execution(code, index);
@@ -84,25 +55,14 @@ impl SessionHistory {
         forget_inert(&mut self.residue, &self.realized, &self.summaries);
     }
 
-    /// 세션에 무슨 일이 있었는지 알 수 없다고 표시한다.
+    /// Marks the session state as unknowable, forcing all subsequent plans to `Run`.
     ///
-    /// 이후의 모든 align은 전부 Run을 낸다. 세션을 다시 신뢰하는 방법은 없다 —
-    /// 인터프리터를 새로 띄우고 새 `SessionHistory`로 시작해야 한다.
-    ///
-    /// 어떤 소스가 돌다 끊겼는지 아는 경우라면 이게 아니라
-    /// [`record_partial`](Self::record_partial)이다. 세션 하나를 통째로 버리는
-    /// 값은 소스조차 모를 때를 위한 것이다.
+    /// Recovery requires a new interpreter and a new `SessionHistory`.
     pub fn poison(&mut self) {
         self.poisoned = true;
     }
 
-    /// 실행 하나에 순번을 발급하고 그 효과를 def-use 그래프와 요약 표에 남긴다.
-    /// 실현 열에 놓을지 residue에 놓을지는 호출부가 정한다.
-    ///
-    /// 실행을 만드는 유일한 자리다. 순번만 받고 그래프·요약 기록을 건너뛴 실행이
-    /// 생기면, 그 실행이 다시 정의한 이름의 상계가 그 자리에서 낡는다 — 사이에
-    /// 끼어든 옛 재정의가 이 실행보다 뒤에 놓인 호출에 그대로 남아 상계를 좁힌다.
-    /// 좁아진 상계는 잘못된 재사용이다.
+    /// Allocates a sequence number and records all time-indexed analysis together.
     fn record_execution(&mut self, source: &PythonSource, index: usize) -> ExecRef {
         let seq = self.executions;
         self.executions += 1;

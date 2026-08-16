@@ -1,51 +1,46 @@
 use super::plan::Effect;
 
-/// statement 하나에서 정적으로 뽑아낸 사실. 오염 집합 계산의 재료다.
-///
-/// 전부 상향 근사다 — 실제보다 넓게 잡을 수는 있어도 좁게 잡지는 않는다.
-/// 좁게 잡으면 잘못된 재사용(조용히 틀린 결과)이 되기 때문이다.
+/// Conservative facts extracted from one statement for disturbance analysis.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct StatementFacts {
-    /// module namespace에 바인딩할 수 있는 이름 (may-def 합집합).
+    /// Names the statement may bind in the module namespace.
     pub binds: Vec<Box<str>>,
-    /// 읽는 module-level free name.
+    /// Module-level free names the statement reads.
     pub reads: Vec<Box<str>>,
-    /// 언급하는 모든 이름. mutation 상계의 기반이다.
+    /// All mentioned names, used to bound possible mutation.
     pub mentions: Vec<Box<str>>,
-    /// `b = a` (RHS가 bare Name) / `class C(Base)` 로 생기는 별칭 간선.
+    /// Alias edges from bare-name assignment and class inheritance.
     pub alias_edges: Vec<(Box<str>, Box<str>)>,
-    /// 직접 호출하는, 정적으로 이름이 잡히는 대상.
+    /// Statically named direct callees.
     pub calls: Vec<Box<str>>,
-    /// `def`/`class`일 때의 본문 요약. 호출부가 이걸 흡수한다.
+    /// Callable body summary for a `def` or `class`.
     pub summary: Option<CalleeSummary>,
-    /// `del x`로 지우는 이름.
+    /// Names removed by `del`.
     pub deletes: Vec<Box<str>>,
-    /// 이 statement가 in-place로 바꿀 수 있는 이름의 상계 — attr/subscript 대입의
-    /// root, augmented assign의 root, 순수 화이트리스트 밖 호출의 receiver와 인자.
+    /// Names whose objects may be mutated in place.
     pub mutates: Vec<Box<str>>,
     pub effect: Effect,
-    /// 반사적 구문 — prefix 밖에 있으면 오염 집합이 전체가 된다.
+    /// Whether reflective syntax makes the effects unknowable.
     pub opaque: bool,
 }
 
-/// `def`/`class` 본문의 요약. 호출하면 무슨 일이 일어나는지의 상계.
+/// An upper bound on the effects of calling a `def` or `class` body.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct CalleeSummary {
-    /// 본문의 `global x; x = ...` — 호출하면 module global x가 바인딩된다.
+    /// Module globals the body may bind or delete.
     pub global_writes: Vec<Box<str>>,
-    /// 본문이 in-place로 바꾸는 free name.
+    /// Free-name objects the body may mutate in place.
     pub mutates_frees: Vec<Box<str>>,
-    /// 본문이 in-place로 바꾸는 파라미터 위치.
+    /// Positional parameters the body may mutate in place.
     pub mutates_params: Vec<usize>,
-    /// 본문이 호출하는 대상. 전이 폐포 계산용.
+    /// Statically named callees used for transitive resolution.
     pub callees: Vec<Box<str>>,
-    /// 본문에 반사적 구문이 있다 — 이 함수 호출은 무엇이든 할 수 있다.
+    /// Whether calling the body may execute reflective syntax.
     pub opaque: bool,
 }
 
 impl CalleeSummary {
-    /// 다른 callable의 요약을 이 요약에 합친다 — 이 callable을 호출하면 저쪽이
-    /// 하는 일도 일어날 수 있다는 뜻이 된다.
+    /// Adds every possible effect from another callable summary.
     pub fn absorb(&mut self, other: &CalleeSummary) {
         for name in &other.global_writes {
             if !self.global_writes.contains(name) {
@@ -72,8 +67,7 @@ impl CalleeSummary {
 }
 
 impl Default for StatementFacts {
-    /// 아무것도 알아내지 못한 statement. 모른다는 것은 무엇이든 할 수 있다는
-    /// 뜻이므로 반사적으로 취급한다 — 틀려도 Run이 늘어날 뿐이다.
+    /// Defaults to opaque so missing analysis can only increase execution.
     fn default() -> Self {
         Self {
             binds: Vec::new(),

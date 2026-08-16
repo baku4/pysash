@@ -1,12 +1,11 @@
-//! 무작위 (세션, 소스) 쌍에 대해 절대 깨지면 안 되는 성질들.
+//! Invariants over generated session-and-source pairs.
 
 use proptest::prelude::*;
 use pysash::source::PythonSource;
 use pysash::SessionHistory;
 use pysash::plan::Action;
 
-/// 실제 세션에 나올 법한 statement들. 바인딩·mutation·전이 global 쓰기·별칭이
-/// 골고루 섞여 있어야 오염 계산의 성질이 실제로 시험된다.
+/// A mixed vocabulary covering binding, mutation, aliases, and transitive writes.
 const VOCAB: &[&str] = &[
     "x = 1\n",
     "y = x\n",
@@ -34,7 +33,7 @@ fn session(pushed: &[&str]) -> SessionHistory {
 }
 
 proptest! {
-    /// Reuse는 prefix 밖에서 절대 나오지 않는다.
+    /// Reuse never appears outside the common prefix.
     #[test]
     fn reuse_stays_inside_the_prefix(pushed in statements(), incoming in statements()) {
         let history = session(&pushed);
@@ -47,7 +46,7 @@ proptest! {
         }
     }
 
-    /// 어떤 세션에서든, 계획을 실행하고 realize하면 그 자리에서 수렴한다.
+    /// Realizing any generated plan converges immediately.
     #[test]
     fn realize_converges_in_one_step(pushed in statements(), incoming in statements()) {
         let mut history = session(&pushed);
@@ -61,7 +60,7 @@ proptest! {
         );
     }
 
-    /// align은 순수하다 — 같은 세션에 두 번 물어도 같은 답이다.
+    /// Alignment is pure and repeatable.
     #[test]
     fn align_is_pure(pushed in statements(), incoming in statements()) {
         let history = session(&pushed);
@@ -69,8 +68,7 @@ proptest! {
         prop_assert_eq!(history.align(&code), history.align(&code));
     }
 
-    /// 끊긴 실행을 기록하면 재사용은 줄어들 수만 있다. 실제로 돈 것보다 넓게
-    /// 기록하는 방향이므로 오염 상계가 넓어질 뿐 좁아지지 않는다.
+    /// Recording a partial execution can only reduce reuse.
     #[test]
     fn recording_an_interruption_never_adds_reuse(
         pushed in statements(),
@@ -85,7 +83,7 @@ proptest! {
         prop_assert!(history.align(&code).summary().reused <= before);
     }
 
-    /// 끊긴 실행을 기록한 뒤에도 편집 루프는 한 번의 realize로 수렴한다.
+    /// A partial execution still converges after one realization.
     #[test]
     fn realize_converges_after_an_interruption(
         pushed in statements(),

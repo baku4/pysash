@@ -1,10 +1,9 @@
-//! 사실 추출의 완료 판정 — 상계를 좁게 잡으면 잘못된 재사용이 되는 실측 케이스들.
+//! Fact-extraction cases where a narrower upper bound would permit incorrect reuse.
 
 use pysash::plan::Effect;
 use pysash::source::PythonSource;
 
-/// 소스 하나의 첫 statement가 가진 facts. 타입은 crate 밖에서 이름 붙일 수
-/// 없으므로 (내부 어휘다) 추론에 맡긴다.
+/// Returns the inferred facts for a source's first statement.
 macro_rules! facts {
     ($code:expr $(,)?) => {{
         let source = PythonSource::parse($code).expect("valid python");

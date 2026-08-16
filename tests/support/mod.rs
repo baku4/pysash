@@ -1,7 +1,4 @@
-//! fixture 로더와, 판정 결과를 한 줄로 읽게 만드는 도우미.
-//!
-//! 통합 테스트는 crate가 따로 잡히므로 여기 있는 함수 중 일부는 어느 한쪽에서만
-//! 쓰인다. 그 쪽의 dead_code 경고를 여기서 한 번에 끈다.
+//! Fixture loading and compact alignment-report helpers.
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
@@ -9,7 +6,7 @@ use pysash::SessionHistory;
 use pysash::plan::{Action, AlignmentPlan, DecisionReason, SessionDiagnostic};
 use pysash::source::PythonSource;
 
-/// 원본 텍스트를 함께 들고 다니는 fixture. 실패 메시지에 이름을 붙이려고 있다.
+/// A named fixture retaining its original text and parsed source.
 pub struct Fixture {
     pub name: String,
     pub text: String,
@@ -27,7 +24,7 @@ fn load(path: &Path, name: String) -> Fixture {
     Fixture { name, text, source }
 }
 
-/// `tests/fixtures/corpus/`의 모든 소스. 이름 순으로 고정된다.
+/// Loads every corpus source in deterministic name order.
 pub fn corpus() -> Vec<Fixture> {
     let dir = fixtures_dir().join("corpus");
     let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
@@ -36,7 +33,7 @@ pub fn corpus() -> Vec<Fixture> {
         .filter(|path| path.extension().is_some_and(|extension| extension == "py"))
         .collect();
     paths.sort();
-    assert!(!paths.is_empty(), "corpus가 비어 있다: {}", dir.display());
+    assert!(!paths.is_empty(), "corpus is empty: {}", dir.display());
     paths
         .iter()
         .map(|path| {
@@ -52,10 +49,7 @@ pub fn step(scenario: &str, file: &str) -> PythonSource {
     load(&path, format!("{scenario}/{file}")).source
 }
 
-/// 판정을 한 줄 문자열로. `.`은 Reuse, `X`는 Run이다.
-///
-/// 열 개 넘는 statement의 판정을 `Vec<Action>`으로 비교하면 어디가 어긋났는지
-/// 눈으로 못 찾는다. 자리마다 한 글자면 index를 세어서 찾을 수 있다.
+/// Formats actions as one character per statement: `.` for reuse and `X` for run.
 pub fn actions(plan: &AlignmentPlan) -> String {
     plan.steps
         .iter()
@@ -73,7 +67,7 @@ pub fn reasons(plan: &AlignmentPlan) -> Vec<DecisionReason> {
         .collect()
 }
 
-/// 판정과 원문 첫 줄을 나란히 — 기대값이 어긋났을 때 눈으로 확인하는 용도다.
+/// Formats each decision beside the statement's first source line.
 pub fn explain(plan: &AlignmentPlan, code: &PythonSource) -> String {
     let mut out = String::new();
     for statement in &plan.steps {
@@ -96,70 +90,52 @@ pub fn has_diagnostic(plan: &AlignmentPlan, matches: impl Fn(&SessionDiagnostic)
     plan.diagnostics.iter().any(matches)
 }
 
-/// 앞에서부터 `count`개 statement만 남긴 소스. 원본 바이트를 그대로 자른다.
-///
-/// top-level statement는 전부 줄 첫 칸에서 시작하므로 statement 끝에서 자르면
-/// 언제나 파싱된다.
+/// Returns source containing the first `count` statements and their original bytes.
 pub fn head(source: &PythonSource, count: usize) -> PythonSource {
     assert!(count > 0 && count <= source.statements().len());
     let end = source.statements()[count - 1].range.end as usize;
-    PythonSource::parse_bytes(&source.raw()[..end]).expect("statement 경계에서 자른 소스")
+    PythonSource::parse_bytes(&source.raw()[..end]).expect("source cut at a statement boundary")
 }
 
-/// `index` 자리의 statement 하나만 떼어 낸 소스.
-///
-/// 셸이 셀 하나를 커널에 보낼 때 넘기는 바로 그 조각이다 — 끊긴 실행을 기록할 때
-/// 필요하다. 잘라낸 조각이 같은 statement로 다시 파싱된다는 것은 `tests/corpus.rs`가
-/// 코퍼스 전체에 대해 확인한다.
+/// Returns source containing only the statement at `index`.
 pub fn nth(source: &PythonSource, index: usize) -> PythonSource {
     let range = source.statements()[index].range;
-    PythonSource::parse_bytes(source.slice(range)).expect("statement 하나는 그대로 파싱된다")
+    PythonSource::parse_bytes(source.slice(range)).expect("one statement reparses unchanged")
 }
 
-/// `index` 자리에 새 statement 한 줄을 끼워 넣은 소스.
-///
-/// 어떤 코드든 안전하게 "중간을 고친" 판본을 만들 수 있는 유일한 편집이다 —
-/// 이름이 겹치지 않고, 들여쓰기를 건드리지 않으며, 아래 statement를 한 칸씩
-/// 밀기만 한다.
+/// Inserts one non-conflicting top-level statement at `index`.
 pub fn insert_probe(source: &PythonSource, index: usize) -> PythonSource {
     let raw = source.raw();
     let at = source.statements()[index].range.start as usize;
     assert!(
         at == 0 || raw[at - 1] == b'\n',
-        "statement {index}가 줄 첫 칸에서 시작하지 않는다"
+        "statement {index} does not begin at the start of a line"
     );
     let mut bytes = Vec::with_capacity(raw.len() + PROBE.len());
     bytes.extend_from_slice(&raw[..at]);
     bytes.extend_from_slice(PROBE.as_bytes());
     bytes.extend_from_slice(&raw[at..]);
-    PythonSource::parse_bytes(&bytes).expect("한 줄 삽입은 파싱을 깨지 않는다")
+    PythonSource::parse_bytes(&bytes).expect("inserting one line preserves valid syntax")
 }
 
-/// `index` 자리의 statement를 다른 한 줄로 갈아 끼운 소스. statement 수는 그대로다.
-///
-/// 셀을 새로 만들지도, 아래를 밀지도 않는 **제자리 수정** — 셸에서 한 줄 고치는
-/// 바로 그 편집이다. 아래 statement들은 index도 canonical도 그대로지만, 앞이
-/// 달라졌으므로 더 이상 "그 자리의 실행"이 아니다.
+/// Replaces the statement at `index` with one line without shifting later statements.
 pub fn replace_statement(source: &PythonSource, index: usize) -> PythonSource {
     let raw = source.raw();
     let statement = &source.statements()[index];
     let (start, end) = (statement.range.start as usize, statement.range.end as usize);
     assert!(
         start == 0 || raw[start - 1] == b'\n',
-        "statement {index}가 줄 첫 칸에서 시작하지 않는다"
+        "statement {index} does not begin at the start of a line"
     );
     let mut bytes = Vec::with_capacity(raw.len() + PROBE.len());
     bytes.extend_from_slice(&raw[..start]);
-    // 개행은 원문의 것을 그대로 쓴다 — 뒤따르는 주석도 그 자리에 남는다.
+    // Preserve the original newline and any following comments.
     bytes.extend_from_slice(PROBE.trim_end().as_bytes());
     bytes.extend_from_slice(&raw[end..]);
-    PythonSource::parse_bytes(&bytes).expect("한 줄 치환은 파싱을 깨지 않는다")
+    PythonSource::parse_bytes(&bytes).expect("replacing one line preserves valid syntax")
 }
 
-/// 각 statement가 jupytext `# %%` 셀 중 몇 번째에 들어 있는가.
-///
-/// 셸은 셀 단위로 실행한다 — 셀 안에 Run이 하나라도 있으면 그 셀은 통째로 돈다.
-/// 마커가 없는 소스는 전부 한 셀로 본다.
+/// Maps each statement to its jupytext `# %%` cell, or cell zero without markers.
 pub fn cell_of_statement(source: &PythonSource) -> Vec<usize> {
     let raw = source.raw();
     let mut marks: Vec<usize> = Vec::new();
@@ -180,9 +156,7 @@ pub fn cell_of_statement(source: &PythonSource) -> Vec<usize> {
         .collect()
 }
 
-/// 셀 단위 재사용 — (다시 돌지 않는 셀, statement가 든 셀 전체).
-///
-/// `cells`는 plan을 낳은 그 소스의 [`cell_of_statement`] 결과여야 한다.
+/// Returns reusable and total executable cells for the plan's source cell mapping.
 pub fn cell_reuse(plan: &AlignmentPlan, cells: &[usize]) -> (usize, usize) {
     let mut run: Vec<usize> = plan
         .steps
@@ -199,21 +173,20 @@ pub fn cell_reuse(plan: &AlignmentPlan, cells: &[usize]) -> (usize, usize) {
     (all.len() - run.len(), all.len())
 }
 
-/// 맨 뒤에 statement 한 줄을 덧붙인 소스.
+/// Appends one non-conflicting statement.
 pub fn append_probe(source: &PythonSource) -> PythonSource {
     let mut bytes = source.raw().to_vec();
     if !bytes.ends_with(b"\n") {
         bytes.push(b'\n');
     }
     bytes.extend_from_slice(PROBE.as_bytes());
-    PythonSource::parse_bytes(&bytes).expect("한 줄 덧붙이기는 파싱을 깨지 않는다")
+    PythonSource::parse_bytes(&bytes).expect("appending one line preserves valid syntax")
 }
 
-/// corpus 어디에도 나오지 않는 이름이어야 한다 — 겹치면 canonical이 우연히
-/// 일치해 prefix가 밀린다.
+/// A probe name absent from the corpus so it cannot extend a prefix accidentally.
 const PROBE: &str = "pysash_probe_marker = 1\n";
 
-/// 이 소스만 실행한 세션.
+/// Creates a session that has executed only this source.
 pub fn realized(source: &PythonSource) -> SessionHistory {
     let mut history = SessionHistory::new();
     history.realize(source);

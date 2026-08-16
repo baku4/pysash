@@ -4,23 +4,10 @@ use std::hash::{Hash, Hasher};
 // module-rule: allow import-alias -- name-conflict: avoid collision with std::hash::Hasher
 use blake3::Hasher as Blake3Hasher;
 
-/// statement의 정체성. 같은 코드는 같은 값이 된다.
+/// A statement identity derived from a conservative canonical encoding.
 ///
-/// 아래 셋은 전부 같은 `CanonicalStatement`다 — 공백도 주석도 리터럴 표기도
-/// statement의 정체성이 아니다.
-///
-/// ```python
-/// x = 1000
-/// x=1000
-/// x = 1_000  # comment
-/// ```
-///
-/// 반대로 `1000`과 `1000.0`은 다르다. 과다 정규화는 잘못된 재사용이 되어 조용히
-/// 틀린 결과를 낳고, 과소 정규화는 불필요한 재실행이 되어 그냥 느릴 뿐이다.
-/// 애매하면 언제나 "다르다"로 떨어진다.
-///
-/// `digest`는 O(1) 사전 비교와 해시 키를 위한 것이고, 동일성의 최종 판정은 `encoding`
-/// 바이트 비교로 확정한다 — 재사용 여부가 해시 충돌 가능성에 걸리지 않게 하기 위해서다.
+/// Equality confirms the full encoding after comparing digests, so a hash collision cannot
+/// authorize reuse. See `docs/design.md` for the normalization boundary.
 #[derive(Clone)]
 pub struct CanonicalStatement {
     digest: [u8; 32],
@@ -28,8 +15,7 @@ pub struct CanonicalStatement {
 }
 
 impl CanonicalStatement {
-    /// 유일한 생성 경로. `digest`는 `encoding`에서만 파생되므로 둘이 어긋난 값은
-    /// 만들 수 없다.
+    /// Creates an identity whose digest is derived from the supplied encoding.
     pub fn from_encoding(encoding: Vec<u8>) -> Self {
         let mut hasher = Blake3Hasher::new();
         hasher.update(&encoding);

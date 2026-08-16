@@ -12,12 +12,12 @@ use super::decode::decode;
 use super::facts::extract;
 
 impl PythonSource {
-    /// UTF-8 문자열을 Python 소스로 읽는다.
+    /// Parses a UTF-8 string as Python source.
     pub fn parse(source: &str) -> Result<Self, ParseError> {
         Self::parse_bytes(source.as_bytes())
     }
 
-    /// 바이트열을 Python 소스로 읽는다. 문법적으로 파싱 가능하지 않으면 실패한다.
+    /// Parses bytes as UTF-8 Python source and rejects invalid syntax or encoding.
     pub fn parse_bytes(source: &[u8]) -> Result<Self, ParseError> {
         let (text, base) = decode(source)?;
 
@@ -53,13 +53,12 @@ impl PythonSource {
     }
 }
 
-/// 파서가 준 위치를 원본 바이트열 기준으로 옮긴다. BOM을 떼어낸 만큼이 `base`다.
+/// Shifts a parser range by the stripped BOM length.
 fn shift(start: u32, end: u32, base: u32) -> Range {
     Range::new(base + start, base + end)
 }
 
-/// 값이 문자열 리터럴 하나뿐인 expression statement인가. 첫 statement일 때만
-/// docstring이 되므로 위치 판정은 호출부가 한다.
+/// Returns whether a statement is a bare string expression.
 fn is_bare_string(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Expr(expr) => matches!(*expr.value, Expr::StringLiteral(_)),

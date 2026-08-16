@@ -1,5 +1,4 @@
-//! `Range`는 사용자가 준 **원본 바이트열** 기준이어야 한다. 이게 어긋나면 잘라낸
-//! 코드를 인터프리터에 먹일 수 없다.
+//! `Range` values are measured against the original input bytes.
 
 use pysash::Range;
 use pysash::source::ParseErrorKind;
@@ -14,7 +13,7 @@ fn ranges(source: &str) -> Vec<(u32, u32)> {
         .collect()
 }
 
-/// 선행 주석은 statement에 포함되지 않고, 데코레이터는 포함된다.
+/// Leading comments are excluded while decorators are included.
 #[test]
 fn range_excludes_leading_comment_and_includes_decorator() {
     assert_eq!(ranges("# lead\n@deco\ndef f():\n    pass\n"), [(7, 30)]);
@@ -25,13 +24,13 @@ fn range_splits_statements_on_the_same_line() {
     assert_eq!(ranges("a = 1; b = 2\n"), [(0, 5), (7, 12)]);
 }
 
-/// offset은 문자 수가 아니라 바이트 수다.
+/// Offsets count bytes rather than Unicode scalar values.
 #[test]
 fn range_is_measured_in_bytes() {
-    assert_eq!(ranges("s = '한글테스트'\nt = 2\n"), [(0, 21), (22, 27)]);
+    assert_eq!(ranges("s = 'naïve façade!'\nt = 2\n"), [(0, 21), (22, 27)]);
 }
 
-/// BOM을 떼어낸 만큼 offset이 밀린다 — 원본 기준을 유지해야 하기 때문이다.
+/// Stripping a BOM shifts parser offsets back to the original byte positions.
 #[test]
 fn range_accounts_for_a_byte_order_mark() {
     let source = "\u{FEFF}x = 1\n";
@@ -41,7 +40,7 @@ fn range_accounts_for_a_byte_order_mark() {
     assert_eq!(parsed.slice(parsed.statements()[0].range), b"x = 1");
 }
 
-/// range로 잘라낸 바이트를 다시 파싱하면 같은 statement가 나온다.
+/// Slicing by range and reparsing preserves statement identity.
 #[test]
 fn slicing_a_statement_round_trips_to_the_same_identity() {
     let source = "import os\nx = 1000  # comment\n\ndef f(a):\n    return a + 1\n\nif x: pass\n";
@@ -73,7 +72,7 @@ fn syntax_errors_are_the_only_failure_of_parsing() {
     let error = PythonSource::parse("def f(:\n").unwrap_err();
     assert!(matches!(error.kind, ParseErrorKind::Syntax { .. }));
 
-    // 파싱된다는 것이 실행이 성공한다는 뜻은 아니다 — 이것들은 전부 Ok다.
+    // Syntactic validity does not guarantee successful execution.
     for source in [
         "undefined_name\n",
         "1/0\n",
@@ -89,8 +88,7 @@ fn non_utf8_input_is_rejected() {
     assert!(matches!(error.kind, ParseErrorKind::NotUtf8 { offset: 5 }));
 }
 
-/// UTF-8이 아닌 인코딩 선언은 거부한다. `Range`가 어느 바이트열 기준인지
-/// 흐려지느니 명시적으로 실패하는 편이 낫다.
+/// A non-UTF-8 encoding cookie is rejected.
 #[test]
 fn non_utf8_coding_cookie_is_rejected() {
     let error = PythonSource::parse("# -*- coding: latin-1 -*-\nx = 1\n").unwrap_err();

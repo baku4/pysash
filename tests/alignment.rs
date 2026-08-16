@@ -1,4 +1,4 @@
-//! Alignment의 완료 판정 — 잘못된 재사용을 낳던 실측 반례들과 편집 루프의 수렴.
+//! Alignment counterexamples, invariants, and edit-loop convergence.
 
 use pysash::source::PythonSource;
 use pysash::SessionHistory;
@@ -39,7 +39,7 @@ fn nothing_to_run(history: &SessionHistory, code: &str) -> bool {
     history.align(&source(code)).run_steps().next().is_none()
 }
 
-/// 세션이 소스의 순수 prefix면 그만큼 재사용하고 나머지만 실행한다.
+/// A pure session prefix is reused and only the source suffix runs.
 
 #[test]
 fn a_session_that_is_a_prefix_is_reused() {
@@ -87,11 +87,11 @@ fn a_reordered_source_has_no_prefix_and_runs_entirely() {
     assert!(plan.steps.iter().all(|p| p.action == Run));
 }
 
-/// 편집 지점 위라도, 그 실행이 남긴 것을 뒤의 실행이 건드렸으면 재사용할 수 없다.
+/// A prefix execution is not reusable after a later execution disturbs its result.
 
 #[test]
 fn late_binding_reruns_the_clobbered_binding() {
-    // 실측: H에서 y = f()는 K=20을 읽어 40. P에서 f()는 K=10을 읽어 20이어야 한다.
+    // The old call read K=20; the new call must read K=10.
     let history = session(&[
         "K = 10\n",
         "def f():\n    return K * 2\n",
@@ -108,7 +108,7 @@ fn late_binding_reruns_the_clobbered_binding() {
 
 #[test]
 fn argument_mutation_reruns_the_mutated_producer() {
-    // 실측: add(a)가 a를 in-place로 바꿨다. P의 a = []는 다시 만들어져야 한다.
+    // `add(a)` mutated `a`, so the source must recreate the empty list.
     let history = session(&[
         "a = []\n",
         "def add(l):\n    l.append(1)\n",
@@ -125,7 +125,7 @@ fn argument_mutation_reruns_the_mutated_producer() {
 
 #[test]
 fn decorator_registry_mutation_is_transitive() {
-    // 실측: @register가 routes.append를 호출했다. routes = []는 다시 만들어져야 한다.
+    // `@register` appended to `routes`, so the source must recreate the registry.
     let history = session(&[
         "routes = []\n",
         "def register(f):\n    routes.append(f)\n    return f\n",
@@ -138,7 +138,7 @@ fn decorator_registry_mutation_is_transitive() {
 
 #[test]
 fn transitive_global_writes_rerun_the_binding() {
-    // 실측: h() → g() → global c 재바인딩. c = 0은 다시 실행되어야 한다.
+    // `h()` calls `g()`, which rebinds global `c`.
     let history = session(&[
         "def g():\n    global c\n    c = 1\n",
         "def h():\n    g()\n",
@@ -156,7 +156,7 @@ fn transitive_global_writes_rerun_the_binding() {
 
 #[test]
 fn repeated_statements_are_distinguished_by_position() {
-    // 실측: add(a)를 두 번 쓰면 두 번 실행되어야 한다 (n == 2).
+    // Two positional occurrences of `add(a)` represent two executions.
     let history = session(&[
         "a = []\n",
         "def add(l):\n    l.append(1)\n",
@@ -169,11 +169,11 @@ fn repeated_statements_are_distinguished_by_position() {
 
 #[test]
 fn container_aliases_poison_the_original_name() {
-    // 실측: keep = a 후 keep.append(1)은 a를 바꾼 것이다.
+    // Mutating `keep` after `keep = a` also mutates `a`.
     let history = session(&["a = []\n", "keep = a\n", "keep.append(1)\n"]);
     let code = "a = []\n";
     assert_eq!(actions(&history, code), [Run]);
-    // 이름은 a일 수도(원본), keep일 수도(별칭) 있다 — 같은 객체다.
+    // Either alias may identify the same disturbed object.
     assert!(matches!(
         reasons(&history, code)[0],
         DecisionReason::DependencyChanged { .. }
@@ -182,7 +182,7 @@ fn container_aliases_poison_the_original_name() {
 
 #[test]
 fn inheritance_shares_mutable_attributes() {
-    // 실측: C.items.append(1)은 B.items를 바꾼 것이다 (상속 별칭).
+    // `C.items.append(1)` mutates the attribute inherited from `B`.
     let history = session(&[
         "class B:\n    items = []\n",
         "class C(B):\n    pass\n",
@@ -195,14 +195,14 @@ fn inheritance_shares_mutable_attributes() {
 
 #[test]
 fn attribute_mutation_does_not_poison_unrelated_bindings() {
-    // 실측: config.LIMIT = 99는 이미 복사된 LIMIT 바인딩을 바꾸지 못한다.
+    // Rebinding `config.LIMIT` does not alter the previously imported `LIMIT` name.
     let history = session(&[
         "import config\n",
         "from config import LIMIT\n",
         "config.LIMIT = 99\n",
     ]);
     let code = "import config\nfrom config import LIMIT\n";
-    // Run이 연속 구간이 아니다 — 오염된 것만 골라서 다시 돈다.
+    // Only the disturbed binding runs; `Run` need not be contiguous.
     assert_eq!(actions(&history, code), [Run, Reuse]);
 }
 
@@ -217,10 +217,9 @@ fn reflective_residue_runs_everything() {
     let plan = history.align(&source(code));
     assert!(plan.steps.iter().all(|p| p.action == Run));
 
-    // 반사적 구문은 입력 소스가 아니라 세션이 과거에 받은 소스에 있다 — 그 소스를
-    // 세션이 더는 들고 있지 않을 수 있으므로 원문이 직접 실려 온다.
+    // The diagnostic carries retained source text rather than an obsolete source index.
     let Some(SessionDiagnostic::OpaqueResidue { text }) = plan.diagnostics.first() else {
-        panic!("반사적 구문이 실현 밖에 있다");
+        panic!("expected reflective residue");
     };
     assert_eq!(&**text, "builtins.len = str");
 }
@@ -229,8 +228,7 @@ fn reflective_residue_runs_everything() {
 fn a_diverged_session_reports_its_residue() {
     let history = session(&["x = 1\n", "y = 2\n"]);
     let plan = history.align(&source("x = 1\n"));
-    // 갈라졌다는 사실은 residue_len이 말한다. 진단으로 한 번 더 말하지 않는다 —
-    // 같은 것을 두 군데서 관리하게 되기 때문이다.
+    // `residue_len` reports divergence without a duplicate diagnostic.
     assert_eq!(plan.residue_len, 1);
     assert!(plan.diagnostics.is_empty());
 }
@@ -246,12 +244,11 @@ fn poison_runs_everything_forever() {
     );
 }
 
-/// 어디까지 돌았는지 모르는 실행 — 아는 만큼만 버린다.
+/// Partial execution invalidates only the effects it may have produced.
 
 #[test]
 fn an_interrupted_source_disturbs_what_it_might_have_bound() {
-    // 인터프리터의 x는 1일 수도 2일 수도 있다. 어느 쪽이든 x = 1의 실행을 그 자리의
-    // 실행으로 셀 수 없다 — 완주한 prefix만 realize하고 끝내면 조용히 틀린다.
+    // The interpreter may hold either value, so the old `x = 1` cannot remain a witness.
     let mut history = SessionHistory::new();
     history.realize(&source("x = 1\n"));
     history.record_partial(&source("x = 2\nboom()\n"));
@@ -266,7 +263,7 @@ fn an_interrupted_source_disturbs_what_it_might_have_bound() {
 
 #[test]
 fn an_interrupted_source_leaves_untouched_names_reusable() {
-    // poison과 갈리는 자리다 — 끊긴 소스가 건드리지 않은 이름의 재사용은 살아남는다.
+    // Unlike poisoning, partial recording preserves names the source could not touch.
     let mut history = SessionHistory::new();
     history.realize(&source("import os\nbig = [1, 2, 3]\n"));
     history.record_partial(&source("total = 0\nboom()\n"));
@@ -278,19 +275,18 @@ fn an_interrupted_source_leaves_untouched_names_reusable() {
 
 #[test]
 fn an_interrupted_source_is_never_itself_reused() {
-    // residue에 있는 실행은 실현 열에 없다. 같은 소스를 그대로 다시 줘도 전부 Run이다.
+    // Residue is not a reuse witness, even for identical source.
     let mut history = SessionHistory::new();
     history.record_partial(&source("x = 1\ny = x\n"));
     assert_eq!(actions(&history, "x = 1\ny = x\n"), [Run, Run]);
     assert_eq!(history.statement_count(), 0);
-    // 실현 열이 비어 있으면 재사용의 근거가 될 실행이 아예 없다 — 이 기록은 지금도
-    // 앞으로도 어떤 판정에도 닿지 못하므로 세션이 들고 있지 않는다. 판정은 그대로다.
+    // Without a realized witness, this residue cannot affect any verdict and is discarded.
     assert_eq!(history.residue_count(), 0);
 }
 
 #[test]
 fn an_interrupted_run_converges_once_it_is_fixed() {
-    // 영구히 못 쓰게 되는 세션은 poison뿐이다.
+    // A known partial execution remains recoverable.
     let mut history = SessionHistory::new();
     history.realize(&source("x = 1\n"));
     history.record_partial(&source("x = 2\nboom()\n"));
@@ -300,7 +296,7 @@ fn an_interrupted_run_converges_once_it_is_fixed() {
     assert!(nothing_to_run(&history, "x = 1\nx = 2\ny = x\n"));
 }
 
-/// 편집 루프 — 실행하고 realize하면 그 자리에서 수렴한다.
+/// Executing a plan and realizing it converges immediately.
 
 #[test]
 fn the_edit_loop_converges_by_realizing() {
@@ -309,7 +305,7 @@ fn the_edit_loop_converges_by_realizing() {
 
     let plan = history.align(&edited);
     let acts: Vec<Action> = plan.steps.iter().map(|p| p.action).collect();
-    // import는 재사용된다 — 뒤의 어떤 실행도 math를 건드리지 않았다.
+    // No later execution disturbed `math`, so the import remains reusable.
     assert_eq!(acts, [Reuse, Run, Run]);
     assert_eq!(plan.steps[1].reason, DecisionReason::StatementChanged);
 
@@ -317,14 +313,13 @@ fn the_edit_loop_converges_by_realizing() {
     let plan = history.align(&edited);
     assert!(plan.run_steps().next().is_none());
     assert_eq!(plan.summary().reused, 3);
-    // 밀려난 r = 2.0 하나가 residue로 남는다.
+    // The displaced `r = 2.0` remains as residue.
     assert_eq!(history.residue_count(), 1);
 }
 
 #[test]
 fn disturbed_prefix_runs_converge_after_realize() {
-    // K = 10은 오염 때문에 Run이었다. realize가 그 자리를 새 실행으로 바꿔 달지
-    // 않으면, 이미 지나간 K = 20이 영원히 그 자리를 Run으로 만든다.
+    // Realizing a rerun gives it a later sequence than the residue that disturbed it.
     let mut history = session(&[
         "K = 10\n",
         "def f():\n    return K * 2\n",
@@ -342,18 +337,17 @@ fn disturbed_prefix_runs_converge_after_realize() {
 
 #[test]
 fn a_rerun_definition_replaces_the_stale_summary() {
-    // 다시 실행된 def를 새 순번으로 기록하지 않으면, 사이에 끼어든 옛 재정의가 그
-    // 뒤의 f() 호출에 그대로 남아 "f()는 c를 쓴다"는 사실이 사라진다.
+    // A rerun definition must supersede an intervening stale definition.
     let mut history = session(&[
         "def f():\n    global c\n    c = 1\n",
         "c = 0\n",
         "def f():\n    pass\n",
     ]);
     let restored = source("def f():\n    global c\n    c = 1\nc = 0\nf()\n");
-    history.realize(&restored); // 첫 def가 그 자리에서 다시 실행된다
+    history.realize(&restored); // The first definition runs again in place.
     history.push(&source("c = 99\n"));
 
-    // 실측: f()가 만든 c를 c = 99가 덮었다. f()를 재사용하면 z가 1이 아니라 0이 된다.
+    // `c = 99` overwrote the value produced by `f()`, so the call must run again.
     let code = "def f():\n    global c\n    c = 1\nc = 0\nf()\nz = c\n";
     assert_eq!(actions(&history, code), [Reuse, Run, Run, Run]);
     assert_eq!(
@@ -364,7 +358,7 @@ fn a_rerun_definition_replaces_the_stale_summary() {
 
 #[test]
 fn realize_does_not_let_old_executions_poison_new_ones() {
-    // 옛 실행은 새 실행보다 먼저 일어났다 — 시간을 거슬러 오염시키지 못한다.
+    // An older execution cannot disturb one that occurred later.
     let mut history = session(&["x = 1\n", "y = x + 1\n"]);
     let edited = source("x = 2\ny = x + 1\n");
     history.realize(&edited);
@@ -389,16 +383,16 @@ fn growing_the_source_converges_with_realize() {
 #[test]
 fn accumulation_is_never_double_counted_or_wrongly_skipped() {
     let history = session(&["acc = 0\n", "acc = acc + 1\n"]);
-    // 뒤에 한 번 더 붙이면 그 한 번만 실행된다.
+    // Appending one increment runs only that new increment.
     assert_eq!(
         actions(&history, "acc = 0\nacc = acc + 1\nacc = acc + 1\n"),
         [Reuse, Reuse, Run]
     );
-    // 처음으로 돌아가려면 acc = 0을 다시 실행해야 한다 — 세션의 acc는 이미 1이다.
+    // Returning to the initial source must reset the already incremented accumulator.
     assert_eq!(actions(&history, "acc = 0\n"), [Run]);
 }
 
-/// 구조 성질들.
+/// Structural alignment invariants.
 
 #[test]
 fn reuse_never_appears_beyond_the_prefix() {
@@ -445,8 +439,7 @@ fn live_names_track_binds_and_deletes() {
 fn session_only_names_are_flagged_as_unresolved() {
     let history = session(&["df = 1\n"]);
     let plan = history.align(&source("out = df + 1\n"));
-    // df는 이 소스 어디에서도 바인딩되지 않는다 — 세션에서는 돌지만 fresh run에서는
-    // 재현되지 않는 조각이라는 신호다.
+    // `df` is session-relative because this source never binds it.
     assert!(plan.steps[0].diagnostics.iter().any(
         |d| matches!(d, StatementDiagnostic::UnresolvedReference { name } if &**name == "df")
     ));
@@ -469,6 +462,6 @@ fn downgrade_from_turns_the_tail_into_run() {
     assert_eq!(plan.summary().reused, 1);
     assert_eq!(plan.summary().run, 2);
     assert_eq!(plan.summary().first_run, Some(1));
-    // 판정의 기록은 남는다 — 재사용 가능했지만 호출자가 내렸다.
+    // Downgrading preserves the original reuse reason.
     assert_eq!(plan.steps[1].reason, DecisionReason::ReusableExecution);
 }

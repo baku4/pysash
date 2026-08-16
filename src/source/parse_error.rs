@@ -3,11 +3,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use crate::Range;
 
-/// 소스를 `PythonSource`로 만들지 못한 이유.
-///
-/// 이 crate에서 `Err`가 되는 유일한 것이다. 파싱이 깨지면 statement가 하나도 없어
-/// 정렬할 대상 자체가 없기 때문이다. 정렬은 실패하지 않는다 — 전부 다시 실행하라는
-/// 것도 유효한 계획이다.
+/// A failure to construct [`PythonSource`](super::PythonSource) from input bytes.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ParseError {
     pub range: Range,
@@ -16,14 +12,13 @@ pub struct ParseError {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ParseErrorKind {
-    /// 문법 오류. 실행이 실패하지 않음을 보장하는 것은 아니다 — 파싱 가능성만 본다.
+    /// Python syntax error reported by the parser.
     Syntax { message: Box<str> },
-    /// 입력 바이트열이 UTF-8이 아니다.
+    /// Input is not valid UTF-8.
     NotUtf8 { offset: u32 },
-    /// PEP 263 인코딩 선언이 UTF-8이 아니다. `Range`가 어느 바이트열 기준인지
-    /// 흐려지므로 v0.1은 명시적으로 거부한다.
+    /// A PEP 263 cookie declares an unsupported non-UTF-8 encoding.
     UnsupportedEncoding { declared: Box<str> },
-    /// 소스가 너무 길다. offset이 `u32`이므로 4 GiB가 상한이다.
+    /// Input exceeds the `u32` byte-offset limit.
     TooLarge { len: usize },
 }
 

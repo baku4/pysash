@@ -1,9 +1,7 @@
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_pattern, walk_stmt};
 use ruff_python_ast::{ExceptHandler, Expr, Pattern, Stmt};
 
-/// pass 1 — statement 어디에든 등장하는 모든 이름과, 반사 구문의 흔적.
-///
-/// 스코프를 따지지 않는다. def 본문 안이든 comprehension 안이든 전부 본다.
+/// A scope-insensitive scan of all mentioned names and reflective syntax.
 #[derive(Default)]
 pub struct MentionScan {
     pub mentions: Vec<String>,
@@ -93,7 +91,7 @@ impl<'a> Visitor<'a> for MentionScan {
             }
             Expr::Call(call) => {
                 match &*call.func {
-                    // getattr는 attribute 이름이 리터럴로 못 박혀 있을 때만 무해하다.
+                    // Dynamic `getattr` names are reflective; literal attribute names are bounded.
                     Expr::Name(func) if func.id.as_str() == "getattr" => {
                         self.mention("getattr");
                         self.bare_calls.push("getattr".to_string());
@@ -163,8 +161,7 @@ impl<'a> Visitor<'a> for MentionScan {
     }
 }
 
-/// module globals를 임의로 바꿀 수 있는 반사 구문의 이름인가. `getattr`는 두 번째
-/// 인자가 문자열 리터럴이면 허용이라 여기 대신 호출 검사에서 다룬다.
+/// Returns whether a name can reflectively alter arbitrary module globals.
 fn reflective_name(name: &str) -> bool {
     matches!(
         name,
@@ -181,7 +178,7 @@ fn reflective_name(name: &str) -> bool {
     )
 }
 
-/// 접근 자체가 반사인 attribute인가.
+/// Returns whether accessing an attribute exposes reflective state.
 fn reflective_attr(attr: &str) -> bool {
     matches!(attr, "__builtins__" | "__dict__" | "__globals__")
 }

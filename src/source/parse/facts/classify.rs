@@ -13,10 +13,7 @@ const EXTERNAL_WRITE_METHODS: &[&str] = &[
 ];
 const NONDET_ROOTS: &[&str] = &["datetime", "random", "secrets", "time", "uuid"];
 
-/// statement가 무엇을 하는가를 호출 이름과 언급으로 짐작한다.
-///
-/// 판정 게이트가 아니라 호출자 후처리용 분류이므로, 정확하지 않아도 안전이
-/// 깨지지는 않는다.
+/// Classifies statement effects for caller policy without affecting reuse safety.
 pub fn classify(stmt: &Stmt, scan: &MentionScan, opaque: bool) -> Effect {
     if opaque {
         return Effect::Opaque;

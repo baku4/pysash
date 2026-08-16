@@ -1,10 +1,7 @@
 use ruff_python_ast::Stmt;
 use crate::statement_facts::StatementFacts;
 
-/// statement 하나에서 [`StatementFacts`]를 뽑아낸다.
-///
-/// 모든 집합은 상향 근사다. 스코프를 완전히 모델링하지 못하는 구성을 만나면 그
-/// statement는 opaque로 떨어진다 — whitelist 방향이다.
+/// Extracts conservative [`StatementFacts`] from one statement.
 pub fn extract(stmt: &Stmt) -> StatementFacts {
     let scan = scan::MentionScan::run(stmt);
     let sink = walk::ExecWalker::run(stmt);
@@ -12,8 +9,7 @@ pub fn extract(stmt: &Stmt) -> StatementFacts {
     let mut mutates = sink.mutates;
     let mut calls = sink.calls;
     let mut opaque = scan.opaque || sink.opaque;
-    // 이름에 묶이지 않은 callable(인자로 넘긴 lambda 등)은 언제 불릴지 모른다.
-    // 그 효과를 이 statement의 것으로 흡수한다.
+    // An unbound callable may run later, so absorb its effects into this statement.
     for loose in &sink.loose {
         for name in &loose.mutates_frees {
             push_unique(&mut mutates, name);

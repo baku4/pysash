@@ -2,8 +2,7 @@ use std::collections::HashSet;
 use crate::plan::StatementDiagnostic;
 use crate::statement::Statement;
 
-/// Python 인터프리터가 기본으로 제공하는 이름들. 이 이름을 읽는 것은 소스 밖
-/// 의존이 아니다.
+/// Names provided by a standard Python interpreter.
 const BUILTINS: &[&str] = &[
     "ArithmeticError", "AssertionError", "AttributeError", "BaseException",
     "BaseExceptionGroup", "BlockingIOError", "BrokenPipeError", "BufferError", "BytesWarning",
@@ -30,10 +29,7 @@ const BUILTINS: &[&str] = &[
     "staticmethod", "str", "sum", "super", "tuple", "type", "vars", "zip",
 ];
 
-/// 각 statement가 읽지만, 이 소스 어디에서도 바인딩되지 않고 builtin도 아닌 이름.
-///
-/// 세션에 있어야만 실행되는 조각이라는 신호다 — fresh run에서는 재현되지 않는다.
-/// 반환값의 i번째가 i번째 statement의 진단이다.
+/// Returns unresolved reads for each statement at the corresponding output position.
 pub fn unresolved_reads(statements: &[Statement]) -> Vec<Vec<StatementDiagnostic>> {
     let bound: HashSet<&str> = statements
         .iter()

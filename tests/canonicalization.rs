@@ -1,13 +1,8 @@
-//! `CanonicalStatement`의 동일성 경계.
-//!
-//! 과다 정규화는 잘못된 재사용이 되어 조용히 틀린 결과를 낳고, 과소 정규화는
-//! 불필요한 재실행이 되어 그냥 느릴 뿐이다. 그래서 "같다"로 판정하는 목록보다
-//! "다르다"로 판정하는 목록이 더 중요하다.
+//! Conservative identity boundaries for `CanonicalStatement`.
 
 use pysash::source::PythonSource;
 
-/// 소스 하나의 첫 statement가 가진 canonical 정체성. 타입은 crate 밖에서 이름
-/// 붙일 수 없으므로 (내부 어휘다) 추론에 맡긴다.
+/// Returns the inferred canonical identity of a source's first statement.
 macro_rules! canon {
     ($source:expr) => {{
         let source = $source;
@@ -33,7 +28,7 @@ fn assert_differ(pairs: &[(&str, &str)]) {
     }
 }
 
-/// 공백도, 주석도, 숫자 표기도 statement의 정체성이 아니다. 이 셋은 하나다.
+/// Formatting, comments, and equivalent literal spellings do not change identity.
 #[test]
 fn spacing_comments_and_digit_separators_are_one_statement() {
     let a = canon!("x = 1000\n");
@@ -80,31 +75,31 @@ fn tier0_redundant_syntax_is_normalized() {
     ]);
 }
 
-/// ruff는 식별자를 CPython과 동일하게 NFKC 정규화한다.
+/// Ruff applies the same identifier NFKC normalization as CPython.
 #[test]
 fn tier0_identifiers_are_nfkc_normalized() {
     assert_same(&[("\u{1D54F} = 1\n", "X = 1\n")]);
 }
 
-/// 값이 같아 보여도 타입이 다르면 다른 statement다.
+/// Equal-looking values of different types remain distinct.
 #[test]
 fn tier1_numeric_types_are_distinct() {
     assert_differ(&[
         ("x = 1000\n", "x = 1000.0\n"),
-        // `1e3`은 float 1000.0이다 — int `1000`과 다르다.
+        // `1e3` is a float and remains distinct from integer `1000`.
         ("x = 1000\n", "x = 1e3\n"),
         ("x = True\n", "x = 1\n"),
         ("x = 0.0\n", "x = -0.0\n"),
     ]);
 }
 
-/// f-string은 런타임 평가다. 겉모양이 같아도 정규화하지 않는다.
+/// Runtime f-string differences are not normalized away.
 #[test]
 fn tier1_fstrings_are_distinct() {
     assert_differ(&[
         ("s = f'a'\n", "s = 'a'\n"),
         ("s = f'{a}'\n", "s = f'{a!r}'\n"),
-        // self-documenting `=`는 앞뒤 공백까지 그대로 출력한다.
+        // Self-documenting `=` preserves surrounding whitespace in its output.
         ("s = f'{a=}'\n", "s = f'{ a = }'\n"),
     ]);
 }
@@ -120,8 +115,7 @@ fn tier1_structure_is_never_folded() {
     ]);
 }
 
-/// bare string은 부모의 첫 statement일 때만 `__doc__`이 된다. `ComparableStmt`는
-/// 자기 위치를 모르므로 위치를 encoding에 함께 섞는다.
+/// A bare string has docstring identity only in the first statement position.
 #[test]
 fn docstring_position_changes_identity() {
     let as_docstring = PythonSource::parse("'doc'\n").unwrap();

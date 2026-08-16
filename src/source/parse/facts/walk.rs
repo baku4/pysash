@@ -4,22 +4,15 @@ use ruff_python_ast as ast;
 use crate::statement_facts::CalleeSummary;
 use super::scan::MentionScan;
 
-/// 지금 실행되는 수준의 walk.
-///
-/// def/lambda 본문은 지금 실행되지 않으므로 내려가지 않고 요약으로 접는다.
-/// class 본문은 지금 실행되므로 내려간다. comprehension 변수는 밖으로 새지 않게
-/// 가린다.
+/// Walks code that executes immediately and summarizes deferred callable bodies.
 #[derive(Default)]
 pub struct ExecWalker {
     pub sink: Sink,
-    /// 현재 열려 있는 comprehension들의 지역 이름.
+    /// Local names hidden by active comprehensions.
     pub shield: Vec<String>,
 }
 
-/// pass 2 — 지금 실행되는 수준의 walk가 모은 원시 사실들.
-///
-/// module 수준에서 걸었으면 그대로 facts의 재료가 되고, 함수 본문에서 걸었으면
-/// locals를 알아낸 뒤 [`CalleeSummary`]로 접힌다.
+/// Raw facts collected from the currently executing scope.
 #[derive(Default)]
 pub struct Sink {
     pub binds: Vec<String>,
@@ -29,9 +22,9 @@ pub struct Sink {
     pub deletes: Vec<String>,
     pub alias_edges: Vec<(String, String)>,
     pub global_decls: Vec<String>,
-    /// 이름에 묶인 callable(def / class / `f = lambda`)의 요약.
+    /// Summaries for callables bound to names.
     pub nested: Vec<CalleeSummary>,
-    /// 이름에 묶이지 않은 callable(인자로 넘긴 lambda 등)의 요약.
+    /// Summaries for unbound callables such as argument lambdas.
     pub loose: Vec<CalleeSummary>,
     pub opaque: bool,
 }
@@ -66,7 +59,7 @@ impl ExecWalker {
     }
 
     fn visit_parameter_declarations(&mut self, parameters: &ast::Parameters) {
-        // default와 annotation은 def를 실행하는 지금 이 자리에서 평가된다.
+        // Defaults and annotations are evaluated when the definition executes.
         for parameter in parameters.iter() {
             if let Some(default) = parameter.default() {
                 self.visit_expr(default);
@@ -79,8 +72,7 @@ impl ExecWalker {
 
     fn visit_decorators(&mut self, decorators: &[ast::Decorator]) {
         for decorator in decorators {
-            // `@register`는 def 시점에 register를 호출한다. Call 형태(@app.route(...))는
-            // Call 방문이 처리하므로 bare 이름만 여기서 호출로 등록한다.
+            // A bare decorator is called at definition time; call expressions are visited below.
             if let ast::Expr::Name(name) = &decorator.expression {
                 push_unique(&mut self.sink.calls, name.id.as_str());
             }
@@ -110,8 +102,7 @@ impl<'a> Visitor<'a> for ExecWalker {
                 self.visit_decorators(&class.decorator_list);
                 if let Some(arguments) = &class.arguments {
                     for base in &arguments.args {
-                        // 상속은 구문상 대응물이 없는 별칭 간선이다 — 상속된 mutable
-                        // 속성은 부모와 공유 객체다.
+                        // Inheritance aliases mutable attributes shared with the base class.
                         if let ast::Expr::Name(base_name) = base {
                             self.sink
                                 .alias_edges
@@ -123,8 +114,7 @@ impl<'a> Visitor<'a> for ExecWalker {
                         self.visit_expr(&keyword.value);
                     }
                 }
-                // class 본문은 지금 실행된다. 다만 본문의 바인딩은 module 이름이
-                // 아니라 class 속성이다 — 바인딩만 버리고 나머지는 흡수한다.
+                // Class bodies execute now, but their ordinary bindings are class attributes.
                 let mut inner = ExecWalker::default();
                 for body_stmt in &class.body {
                     inner.visit_stmt(body_stmt);
@@ -139,8 +129,7 @@ impl<'a> Visitor<'a> for ExecWalker {
                 for name in &inner.mutates {
                     push_unique(&mut self.sink.mutates, name);
                 }
-                // `class C: global g; g = 1`의 g는 지금 module에 바인딩된다.
-                // 마찬가지로 `global g; del g`는 지금 module에서 지워진다.
+                // Explicit `global` bindings and deletions still affect the module.
                 for name in &inner.binds {
                     if inner.global_decls.contains(name) {
                         self.bind(name);
@@ -152,8 +141,7 @@ impl<'a> Visitor<'a> for ExecWalker {
                     }
                 }
                 self.sink.opaque |= inner.opaque;
-                // method들의 요약이 곧 이 class의 요약이다 — C()를 부르면 그중
-                // 무엇이든 실행될 수 있다.
+                // Constructing the class may invoke any summarized method.
                 let mut class_summary = CalleeSummary::default();
                 for nested in inner.nested.iter().chain(&inner.loose) {
                     class_summary.absorb(nested);
@@ -163,13 +151,13 @@ impl<'a> Visitor<'a> for ExecWalker {
             ast::Stmt::Assign(assign) => {
                 self.visit_expr(&assign.value);
                 if let [ast::Expr::Name(target)] = &assign.targets[..] {
-                    // `b = a`는 별칭 간선이다. b를 통한 변경이 a에 보인다.
+                    // Bare-name assignment creates a tracked alias edge.
                     if let ast::Expr::Name(value) = &*assign.value {
                         self.sink
                             .alias_edges
                             .push((target.id.to_string(), value.id.to_string()));
                     }
-                    // `f = lambda ...`는 이름에 묶인 callable이다.
+                    // Assignment turns the loose lambda summary into a named one.
                     if matches!(&*assign.value, ast::Expr::Lambda(_))
                         && let Some(summary) = self.sink.loose.pop()
                     {
@@ -187,7 +175,7 @@ impl<'a> Visitor<'a> for ExecWalker {
                         let id = name.id.as_str();
                         self.read(id);
                         self.bind(id);
-                        // `x += [1]`은 list라면 in-place다.
+                        // Augmented assignment may mutate the existing object in place.
                         push_unique(&mut self.sink.mutates, id);
                     }
                     target => self.visit_expr(target),
@@ -195,7 +183,7 @@ impl<'a> Visitor<'a> for ExecWalker {
             }
             ast::Stmt::For(for_stmt) => {
                 self.visit_expr(&for_stmt.iter);
-                // generator를 순회하면 소모된다.
+                // Iterating may consume a generator object.
                 self.mutate(&for_stmt.iter);
                 self.visit_expr(&for_stmt.target);
                 for body_stmt in &for_stmt.body {
@@ -209,7 +197,7 @@ impl<'a> Visitor<'a> for ExecWalker {
                 for alias in &import.names {
                     match &alias.asname {
                         Some(asname) => self.bind(asname.as_str()),
-                        // `import a.b.c`는 a를 바인딩한다.
+                        // `import a.b.c` binds the root name `a`.
                         None => {
                             let root = alias.name.split('.').next().unwrap_or_default();
                             self.bind(root);
@@ -279,7 +267,7 @@ impl<'a> Visitor<'a> for ExecWalker {
                         pure_call(id)
                     }
                     ast::Expr::Attribute(func) => {
-                        // method 호출은 receiver를 바꿀 수 있다.
+                        // A method call may mutate its receiver.
                         self.mutate(&func.value);
                         false
                     }
@@ -289,7 +277,7 @@ impl<'a> Visitor<'a> for ExecWalker {
                 for arg in &call.arguments.args {
                     self.visit_expr(arg);
                     if !pure {
-                        // 인자로 넘기는 것만으로 mutation 후보가 된다.
+                        // An unknown call may mutate any passed argument.
                         let inner = match arg {
                             ast::Expr::Starred(starred) => &*starred.value,
                             other => other,
@@ -340,7 +328,7 @@ impl<'a> Visitor<'a> for ExecWalker {
     fn visit_except_handler(&mut self, handler: &'a ast::ExceptHandler) {
         let ast::ExceptHandler::ExceptHandler(inner) = handler;
         if let Some(name) = &inner.name {
-            // `except E as e`의 e는 블록이 끝나면 지워진다 — 바인딩이자 삭제다.
+            // An exception target is bound and then deleted when the handler ends.
             self.bind(name.as_str());
             push_unique(&mut self.sink.deletes, name.as_str());
         }
@@ -360,8 +348,7 @@ impl<'a> Visitor<'a> for ExecWalker {
     }
 }
 
-/// def 본문을 요약한다. 본문은 지금 실행되지 않는다 — 나중에 호출될 때 무슨 일이
-/// 일어날 수 있는지의 상계와, 본문이 읽는 free name들을 돌려준다.
+/// Summarizes a deferred function body and returns its free reads.
 fn analyze_stmts(
     parameters: Option<&ast::Parameters>,
     body: &[ast::Stmt],
@@ -375,7 +362,7 @@ fn analyze_stmts(
     finish_callable(walker.sink, scan.opaque, parameters)
 }
 
-/// lambda 본문을 요약한다.
+/// Summarizes a deferred lambda body and returns its free reads.
 fn analyze_expr(
     parameters: Option<&ast::Parameters>,
     body: &ast::Expr,
@@ -392,7 +379,7 @@ fn finish_callable(
     body_reflective: bool,
     parameters: Option<&ast::Parameters>,
 ) -> (CalleeSummary, Vec<String>) {
-    // 본문의 반사 구문은 이 함수를 호출하는 것을 opaque로 만든다.
+    // Reflective syntax in the body makes the call opaque.
     sink.opaque |= body_reflective;
 
     let positional: Vec<&str> = parameters
@@ -418,7 +405,7 @@ fn finish_callable(
         }
     }
 
-    // 본문 어딘가에서 대입되는 이름은 (global 선언이 없는 한) 본문 전체에서 local이다.
+    // A name assigned anywhere in a function is local unless declared global.
     let locals: Vec<&str> = all_params
         .iter()
         .copied()
@@ -450,7 +437,7 @@ fn finish_callable(
             push_unique_boxed(&mut summary.mutates_frees, name);
         }
     }
-    // 본문 안에서 정의된 callable이 하는 일도 이 함수를 호출하면 일어날 수 있다.
+    // A call can also trigger effects from callables defined inside the body.
     for nested in sink.nested.iter().chain(&sink.loose) {
         for name in &nested.global_writes {
             push_unique_boxed(&mut summary.global_writes, name);
@@ -477,8 +464,7 @@ fn finish_callable(
     (summary, frees)
 }
 
-/// 인자를 in-place로 바꾸지 않는다고 믿는 호출인가. 이 밖의 모든 호출은 receiver와
-/// 인자 전부를 mutation 후보로 잡는다 — 틀리면 Run이 늘어날 뿐인 방향이다.
+/// Returns whether a builtin is assumed not to mutate its arguments.
 fn pure_call(name: &str) -> bool {
     matches!(
         name,
@@ -522,7 +508,7 @@ fn pure_call(name: &str) -> bool {
     )
 }
 
-/// `x.a.b[k]` 같은 접근 사슬의 뿌리 이름.
+/// Returns the root name of an access chain such as `x.a.b[k]`.
 fn root_name(expr: &ast::Expr) -> Option<&str> {
     match expr {
         ast::Expr::Name(name) => Some(name.id.as_str()),
@@ -533,7 +519,7 @@ fn root_name(expr: &ast::Expr) -> Option<&str> {
     }
 }
 
-/// 대입 target 안의 모든 이름 (`(a, b), c` 같은 unpack 포함).
+/// Collects every name in an assignment target, including unpacking.
 fn collect_names(expr: &ast::Expr, out: &mut Vec<String>) {
     match expr {
         ast::Expr::Name(name) => out.push(name.id.to_string()),
@@ -552,7 +538,7 @@ fn collect_names(expr: &ast::Expr, out: &mut Vec<String>) {
     }
 }
 
-/// match pattern이 바인딩하는 이름들.
+/// Returns names bound by a match pattern.
 fn pattern_binds(pattern: &ast::Pattern) -> Vec<&str> {
     let mut names = Vec::new();
     fn walk<'a>(pattern: &'a ast::Pattern, out: &mut Vec<&'a str>) {

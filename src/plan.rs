@@ -1,158 +1,106 @@
 use super::Range;
 
-/// [`SessionHistory`](crate::SessionHistory)의 상태가 입력 소스의 super-set이
-/// 되도록 하는 실행 순서.
+/// An ordered execution plan that realizes the input source in the session.
 ///
-/// 입력 소스의 statement 하나하나에 대해 재사용할지 다시 실행할지를 순서대로 담는다.
-/// `Run`인 것을 이 순서대로 실행하면 소스 전체를 실행한 것과 같은 상태가 된다.
-///
-/// 결과 리포트이므로 전부 열려 있다 — 지킬 불변식이 없고, 이걸 세션에 되먹이는
-/// 경로도 없다.
+/// Executing every `Run` step in order produces a state containing the source's bindings.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AlignmentPlan {
     pub steps: Vec<StatementPlan>,
-    /// 세션과 이 소스가 앞에서 몇 개까지 같았는가.
-    ///
-    /// [`steps`](Self::steps)를 세어서는 알 수 없다 — 전부 Run인 계획이라도 앞이
-    /// 5개까지 같았는지 하나도 안 같았는지가 판정에는 남지 않는다. 그래서 이건
-    /// 저장한다.
+    /// Length of the longest common canonical prefix.
     pub prefix_len: usize,
-    /// prefix를 넘어 세션이 실행한 것 중, 이 판정에 닿을 수 있는 statement 수.
-    /// 0이면 판정에 관해 세션이 이 소스의 순수 prefix다. 이것도 `steps`에서 셀 수
-    /// 없다.
-    ///
-    /// 실행 **누계가 아니다.** 세션은 어떤 판정에도 닿을 수 없게 된 실행을 들고
-    /// 있지 않으므로, 편집-실행을 반복해도 이 수는 자라기만 하지 않는다.
+    /// Number of retained out-of-prefix executions that can affect this plan.
     pub residue_len: usize,
-    /// 세션이 지금 어떤 상태인가. statement 하나에 붙는 것은 [`StatementPlan`]에 있다.
+    /// Session-wide diagnostics for this plan.
     pub diagnostics: Vec<SessionDiagnostic>,
 }
 
-/// statement 하나에 대한 판정.
+/// The decision for one top-level statement.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct StatementPlan {
-    /// 입력 소스에서 몇 번째 statement인가.
+    /// Zero-based statement position in the input source.
     pub index: usize,
-    /// 입력 소스 원본 바이트열에서의 위치.
+    /// Statement location in the input source bytes.
     pub range: Range,
     pub action: Action,
     pub reason: DecisionReason,
-    /// 이 statement가 무엇을 하는가의 분류. 호출자 후처리용이다.
+    /// Effect classification for caller policy, not reuse safety.
     pub effect: Effect,
     pub diagnostics: Vec<StatementDiagnostic>,
 }
 
-/// plan을 훑어보기 좋은 숫자들. [`AlignmentPlan::summary`]가 그때그때 만든다.
-///
-/// 저장되지 않으므로 본문과 어긋날 수 없다 — 절반은 [`AlignmentPlan::steps`]를
-/// 세면 나오는 값이고, 세어 둔 사본을 들고 있으면 계획을 고치는 쪽이 그 사본을
-/// 손으로 맞춰야 한다.
+/// Counts derived from an [`AlignmentPlan`] by [`AlignmentPlan::summary`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct PlanSummary {
-    /// 입력 소스의 statement 수.
     pub total: usize,
-    /// 그중 `Reuse`.
     pub reused: usize,
-    /// 그중 `Run`.
     pub run: usize,
-    /// 세션과 입력 소스의 최장 공통 canonical prefix 길이.
     pub prefix_len: usize,
-    /// prefix를 넘어 세션이 실행한 것 중, 이 판정에 닿을 수 있는 statement 수.
-    /// 0이면 판정에 관해 세션이 이 소스의 순수 prefix다.
     pub residue_len: usize,
-    /// 첫 `Run`의 인덱스. 전부 `Reuse`면 없다.
+    /// Index of the first `Run`, or `None` when all steps are reusable.
     pub first_run: Option<usize>,
 }
 
-/// statement 하나를 어떻게 할 것인가. 두 갈래뿐이다.
+/// Whether to reuse an existing execution or execute the statement again.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Action {
-    /// 이 statement의 기존 실행을 그대로 쓴다. 다시 돌리지 않는다.
+    /// Preserve the existing execution without running the statement again.
     Reuse,
-    /// 다시 실행한다.
+    /// Execute the statement again.
     Run,
 }
 
-/// [`Action`]을 그렇게 정한 이유.
+/// Why an [`Action`] was selected.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum DecisionReason {
-    /// 세션이 이 statement를 이 자리에서 이미 실행했고, 그 뒤에 일어난 어떤
-    /// 실행도 그 결과를 건드리지 않았다. 판정에서 `Reuse`를 낳는 유일한 이유다.
-    /// [`downgrade_from`](AlignmentPlan::downgrade_from) 뒤에는 `Run`에 남아
-    /// "판정은 재사용 가능이었다"를 기록한다.
+    /// A matching execution exists and no later execution disturbed its result.
     ReusableExecution,
-    /// 세션이 이 자리에 다른 statement를 실행했다. 편집 지점이다.
+    /// The session executed a different statement at this position.
     StatementChanged,
-    /// 재사용의 근거로 삼을 수 있는 실행이 없다 — 세션이 이 statement를 이
-    /// 자리에서 실행한 적이 없거나, 세션 상태를 더는 신뢰할 수 없다.
+    /// No execution at this position can serve as a reuse witness.
     NoMatchingExecution,
-    /// 세션이 이 statement를 이 자리에서 실행하긴 했지만, 그 뒤의 실행이
-    /// 이 statement가 의존하는 `name`을 변경했을 수 있다.
+    /// A later execution may have mutated an object produced by this statement.
     DependencyChanged { name: Box<str> },
-    /// 세션이 이 statement를 이 자리에서 실행하긴 했지만, 그 뒤의 실행이
-    /// 이 statement가 바인딩한 `name`을 다시 바인딩했다.
+    /// A later execution rebound a name produced by this statement.
     BindingChanged { name: Box<str> },
 }
 
-/// 세션이 지금 어떤 상태인가에 대한 주석. plan 전체에 붙는다.
-///
-/// 에러가 아니다 — 애매한 것은 이미 Run으로 떨어졌으므로 이게 붙어도 plan은
-/// 유효하다. 내가 못 본 것과 내가 가정한 것을 드러낸다.
-///
-/// "세션이 이 소스의 prefix를 넘어 실행했는가"는 여기 없다.
-/// [`PlanSummary::residue_len`]이 그 사실 자체이고, 진단으로 한 번 더 말하면
-/// 같은 것을 두 군데서 관리하게 된다.
+/// A non-fatal diagnostic about the session as a whole.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum SessionDiagnostic {
-    /// 실현 밖 실행에 반사적 구문이 있다 — 무엇이 오염됐는지 알 수 없어 전부
-    /// Run이다. 반사적 구문이 여럿이면 전부 실린다.
-    ///
-    /// 세션이 들고 있는 것만 실린다. 이제 아무것도 오염시키지 못하게 된 반사적
-    /// 실행은 버려지고, 오염 상계가 같은 것이 여럿이면 가장 나중 것만 남는다 —
-    /// 앞엣것을 실어도 가리키는 오염이 같기 때문이다.
-    ///
-    /// 이 실행은 입력 소스가 아니라 **세션이 과거에 받은 소스**에 있다. 세션은
-    /// 그 소스를 더는 들고 있지 않을 수 있으므로 위치 대신 statement 원문을 직접
-    /// 싣는다 — 사용자에게 보여줄 것이 곧 이것이다.
+    /// Retained reflective code makes every earlier execution unsafe to reuse.
     OpaqueResidue { text: Box<str> },
 }
 
-/// statement 하나에 대한 주석.
-///
-/// 위치는 담지 않는다 — [`StatementPlan::range`]가 이미 그 statement의 위치다.
+/// A non-fatal diagnostic attached to one statement.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum StatementDiagnostic {
-    /// 소스가 읽는 이름을 소스 안에서 찾을 수 없다. 세션에 있어야 실행되는
-    /// 조각이라는 뜻이고, fresh run에서는 재현되지 않는다.
+    /// The source reads a name that it never binds and that is not a builtin.
     UnresolvedReference { name: Box<str> },
 }
 
-/// 이 statement가 무엇을 하는가의 분류. 판정이 아니라 사실이다.
+/// A statement effect classification for caller policy.
 ///
-/// 재사용 판정의 게이트가 아니다 — 판정은 오염 집합이 한다. 이 분류는 호출자가
-/// plan을 후처리할 때 쓴다. 예를 들어 외부 파일이 바뀌었을 수 있으니
-/// [`ExternalRead`](Effect::ExternalRead)는 재사용하지 않겠다는 정책은 호출자의
-/// 몫이다.
+/// This value does not participate in the reuse decision.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Effect {
-    /// 이름 바인딩 외에 관측 가능한 효과 없음.
+    /// No observable effect beyond name binding.
     Pure,
-    /// 모듈 임포트. `sys.modules` 캐시 덕에 재실행이 멱등이다.
+    /// Module import.
     Import,
-    /// print / display / 로깅 같은 출력.
+    /// User-visible output such as printing, display, or logging.
     Output,
-    /// 파일·네트워크·`input()` — 외부 세계를 읽는다.
+    /// Read from files, the network, or user input.
     ExternalRead,
-    /// 파일 쓰기·네트워크 전송·subprocess — 외부 세계를 바꾼다.
+    /// Write to files, the network, or a subprocess.
     ExternalWrite,
-    /// random / time / uuid 같은 비결정적 값 생성.
+    /// Nondeterministic value generation.
     Nondeterministic,
-    /// 반사적 구문 — 무엇이든 할 수 있다.
+    /// Reflective code with unknown effects.
     Opaque,
 }
 
 impl AlignmentPlan {
-    /// 훑어보기 좋은 숫자들. 부를 때마다 [`steps`](Self::steps)를 세어 만든다.
+    /// Derives summary counts from the current steps.
     pub fn summary(&self) -> PlanSummary {
         let run = self
             .steps
@@ -173,18 +121,14 @@ impl AlignmentPlan {
         }
     }
 
-    /// 다시 실행해야 하는 것만. 입력 소스의 순서 그대로다.
+    /// Iterates over `Run` steps in source order.
     pub fn run_steps(&self) -> impl Iterator<Item = &StatementPlan> {
         self.steps.iter().filter(|step| step.action == Action::Run)
     }
 
-    /// `index`부터 끝까지 전부 `Run`으로 내린다.
+    /// Changes every reusable step at or after `index` to `Run`.
     ///
-    /// 외부 세계가 바뀌었을 수 있어 (예: [`Effect::ExternalRead`]) 판정보다 더
-    /// 실행하고 싶을 때 쓴다. 한 지점만 내리고 그 아래를 재사용하면 상태가
-    /// 어긋나므로, 지점 이후 전체를 내리는 것만 제공한다. Reuse → Run 방향만
-    /// 존재하므로 correctness를 깰 수 없다. 내려간 step의 `reason`은 판정
-    /// 당시의 것이 그대로 남는다.
+    /// Existing reasons are preserved; this operation never promotes a `Run` to `Reuse`.
     pub fn downgrade_from(&mut self, index: usize) {
         for step in &mut self.steps {
             if step.index >= index && step.action == Action::Reuse {
