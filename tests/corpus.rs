@@ -14,7 +14,7 @@ mod support;
 use pysash::SessionHistory;
 use pysash::plan::Action;
 use pysash::source::PythonSource;
-use support::{actions, append_probe, corpus, head, insert_probe, nth, realized};
+use support::{actions, append_probe, corpus, head, insert_probe, nth, realized, replace_statement};
 use Action::{Reuse, Run};
 
 /// 삽입 지점을 코퍼스 크기에 맞춰 고른다 — 맨 앞, 앞쪽, 가운데, 맨 뒤.
@@ -273,6 +273,44 @@ fn an_interrupted_last_statement_still_converges() {
         assert!(
             plan.run_steps().next().is_none(),
             "{}: 수렴하지 않았다 {}",
+            fixture.name,
+            actions(&plan)
+        );
+    }
+}
+
+/// 편집-실행을 반복해도 세션이 드는 실현 밖 실행은 유계다.
+///
+/// 한 줄을 고쳤다 되돌리는 사이클은 매번 같은 실행들을 실현 밖으로 민다. 그 실행들은
+/// 오염 상계가 같으므로 뒤엣것이 앞엣것을 덮고, 세션이 드는 양은 몇 사이클 만에
+/// 자리를 잡는다. 여기가 자라면 `align`이 사이클마다 느려진다 — 판정은 그대로인 채로.
+#[test]
+fn repeating_an_edit_loop_keeps_the_session_bounded() {
+    for fixture in corpus() {
+        let total = fixture.source.statements().len();
+        if total < 3 {
+            continue;
+        }
+        let edited = replace_statement(&fixture.source, total / 2);
+
+        let mut history = SessionHistory::new();
+        history.realize(&fixture.source);
+        for _ in 0..3 {
+            history.realize(&edited);
+            history.realize(&fixture.source);
+        }
+        let settled = history.residue_count();
+
+        for _ in 0..30 {
+            history.realize(&edited);
+            history.realize(&fixture.source);
+        }
+        assert_eq!(history.residue_count(), settled, "{}", fixture.name);
+        // 그리고 판정은 내내 수렴한 상태다.
+        let plan = history.align(&fixture.source);
+        assert!(
+            plan.run_steps().next().is_none(),
+            "{}: {}",
             fixture.name,
             actions(&plan)
         );

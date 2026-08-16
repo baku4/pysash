@@ -201,7 +201,17 @@ fn going_back_and_forth_converges_at_each_realize() {
     history.realize(&base);
     assert!(history.align(&base).run_steps().next().is_none());
     assert_eq!(history.statement_count(), 10);
-    assert_eq!(history.residue_count(), 10);
+    // 밀려난 것은 열 개지만 세션이 드는 것은 다섯 개다. 두 판본의 5..9는 같은
+    // 이름을 다시 묶을 뿐이라 오염 상계가 같고, 뒤엣것이 앞엣것을 덮는다.
+    assert_eq!(history.residue_count(), 5);
+
+    // 그래서 오가는 횟수가 residue를 키우지 않는다 — 백 번을 오가도 다섯 개다.
+    for _ in 0..50 {
+        history.realize(&edited);
+        history.realize(&base);
+    }
+    assert!(history.align(&base).run_steps().next().is_none());
+    assert_eq!(history.residue_count(), 5);
 }
 
 /// 판정 자체는 재사용 가능이라도, 외부 파일이 바뀌었을 수 있으니 읽는 지점부터

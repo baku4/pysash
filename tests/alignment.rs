@@ -283,7 +283,9 @@ fn an_interrupted_source_is_never_itself_reused() {
     history.record_partial(&source("x = 1\ny = x\n"));
     assert_eq!(actions(&history, "x = 1\ny = x\n"), [Run, Run]);
     assert_eq!(history.statement_count(), 0);
-    assert_eq!(history.residue_count(), 2);
+    // 실현 열이 비어 있으면 재사용의 근거가 될 실행이 아예 없다 — 이 기록은 지금도
+    // 앞으로도 어떤 판정에도 닿지 못하므로 세션이 들고 있지 않는다. 판정은 그대로다.
+    assert_eq!(history.residue_count(), 0);
 }
 
 #[test]

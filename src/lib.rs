@@ -96,6 +96,9 @@ pub struct SessionHistory {
     realized: Vec<trace::ExecRef>,
     /// 실현 열 밖의 실행들 — 밀려난 옛 실행과 중간에 끊긴 실행. 효과는 남아
     /// 있지만 더 이상 어떤 소스의 실행으로도 세지 않는다. 오염 집합의 재료다.
+    ///
+    /// 누계가 아니다. 어떤 판정에도 닿을 수 없게 된 것은 [`forget`](forget)이
+    /// 버리므로, 편집 루프를 아무리 돌아도 판정에 쓰이는 만큼만 남는다.
     residue: Vec<trace::ExecRef>,
     /// 이름 사이의 연결 — 살아 있는 이름과 별칭 클래스.
     graph: def_use::DefUseGraph,
@@ -107,6 +110,9 @@ pub struct SessionHistory {
     /// 세션에 무슨 일이 있었는지 알 수 없다. 켜지면 이후 모든 정렬이 전면 Run이다.
     poisoned: bool,
 }
+
+mod disturbance;
+mod forget;
 
 mod record;
 mod align;

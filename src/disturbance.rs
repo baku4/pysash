@@ -1,6 +1,6 @@
-use crate::def_use::DefUseGraph;
-use crate::statement::Statement;
-use crate::summaries::SummaryTable;
+use super::def_use::DefUseGraph;
+use super::statement::Statement;
+use super::summaries::SummaryTable;
 
 /// 실현 밖 실행 하나가 세션 상태에서 망가뜨렸을 수 있는 것의 상계.
 pub struct ResidueEntry {

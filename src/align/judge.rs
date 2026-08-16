@@ -3,7 +3,7 @@ use crate::plan::{Action, DecisionReason, SessionDiagnostic};
 use crate::source::PythonSource;
 use crate::statement::Statement;
 use super::SessionHistory;
-use super::disturbance::{Hit, hits, residue_entries};
+use super::{Hit, hits, residue_entries};
 use super::prefix::prefix_len;
 use super::self_contained::unresolved_reads;
 

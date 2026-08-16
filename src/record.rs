@@ -1,3 +1,4 @@
+use super::forget::forget_inert;
 use super::source::PythonSource;
 use super::statement::Statement;
 use super::trace::ExecRef;
@@ -54,6 +55,12 @@ impl SessionHistory {
             let exec = self.record_execution(source, index, statement);
             self.realized.push(exec);
         }
+        forget_inert(
+            &mut self.residue,
+            &self.realized,
+            &self.sources,
+            &self.summaries,
+        );
     }
 
     /// 어디까지 돌았는지 모르는 실행 하나를 기록한다.
@@ -81,6 +88,12 @@ impl SessionHistory {
             let exec = self.record_execution(source, index, statement);
             self.residue.push(exec);
         }
+        forget_inert(
+            &mut self.residue,
+            &self.realized,
+            &self.sources,
+            &self.summaries,
+        );
     }
 
     /// 세션에 무슨 일이 있었는지 알 수 없다고 표시한다.

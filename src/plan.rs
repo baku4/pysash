@@ -17,8 +17,12 @@ pub struct AlignmentPlan {
     /// 5개까지 같았는지 하나도 안 같았는지가 판정에는 남지 않는다. 그래서 이건
     /// 저장한다.
     pub prefix_len: usize,
-    /// prefix를 넘어 세션이 추가로 실행한 statement 수. 0이면 세션이 이 소스의
-    /// 순수 prefix다. 이것도 `steps`에서 셀 수 없다.
+    /// prefix를 넘어 세션이 실행한 것 중, 이 판정에 닿을 수 있는 statement 수.
+    /// 0이면 판정에 관해 세션이 이 소스의 순수 prefix다. 이것도 `steps`에서 셀 수
+    /// 없다.
+    ///
+    /// 실행 **누계가 아니다.** 세션은 어떤 판정에도 닿을 수 없게 된 실행을 들고
+    /// 있지 않으므로, 편집-실행을 반복해도 이 수는 자라기만 하지 않는다.
     pub residue_len: usize,
     /// 세션이 지금 어떤 상태인가. statement 하나에 붙는 것은 [`StatementPlan`]에 있다.
     pub diagnostics: Vec<SessionDiagnostic>,
@@ -53,8 +57,8 @@ pub struct PlanSummary {
     pub run: usize,
     /// 세션과 입력 소스의 최장 공통 canonical prefix 길이.
     pub prefix_len: usize,
-    /// prefix를 넘어 세션이 추가로 실행한 statement 수. 0이면 세션이 이 소스의
-    /// 순수 prefix다.
+    /// prefix를 넘어 세션이 실행한 것 중, 이 판정에 닿을 수 있는 statement 수.
+    /// 0이면 판정에 관해 세션이 이 소스의 순수 prefix다.
     pub residue_len: usize,
     /// 첫 `Run`의 인덱스. 전부 `Reuse`면 없다.
     pub first_run: Option<usize>,
@@ -102,6 +106,9 @@ pub enum DecisionReason {
 pub enum SessionDiagnostic {
     /// 실현 밖 실행에 반사적 구문이 있다 — 무엇이 오염됐는지 알 수 없어 전부
     /// Run이다. 반사적 구문이 여럿이면 전부 실린다.
+    ///
+    /// 아직 판정에 닿을 수 있는 것만 실린다. 자기보다 뒤 순번의 실행밖에 남지
+    /// 않아 이제 아무것도 오염시키지 못하는 반사적 실행은 세션이 들고 있지 않다.
     ///
     /// 이 실행은 입력 소스가 아니라 **세션이 과거에 받은 소스**에 있다. 그래서
     /// `source`([`SessionHistory::sources`](crate::SessionHistory::sources)의
