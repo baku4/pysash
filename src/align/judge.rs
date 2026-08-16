@@ -21,7 +21,7 @@ impl SessionHistory {
         let realized: Vec<&Statement> = self
             .realized
             .iter()
-            .map(|exec| exec.statement(&self.sources))
+            .map(|exec| exec.statement())
             .collect();
         let statements = code.statements();
 
@@ -29,7 +29,7 @@ impl SessionHistory {
         // 실현 밖 실행 = 이 소스와 갈라진 뒤의 실현 열 + 이전에 밀려난 것들.
         let outside = || self.realized[prefix..].iter().chain(&self.residue);
         let residue: Vec<(usize, &Statement)> = outside()
-            .map(|exec| (exec.seq, exec.statement(&self.sources)))
+            .map(|exec| (exec.seq, exec.statement()))
             .collect();
         let entries = residue_entries(&residue, &self.summaries);
 
@@ -37,10 +37,9 @@ impl SessionHistory {
         // 세션을 알 수 없게 만들었는지는 호출자가 봐야 한다. 갈라졌다는 사실
         // 자체는 summary.residue_len이 이미 말한다.
         let diagnostics: Vec<SessionDiagnostic> = outside()
-            .filter(|exec| exec.statement(&self.sources).facts.opaque)
+            .filter(|exec| exec.statement().facts.opaque)
             .map(|exec| SessionDiagnostic::OpaqueResidue {
-                source: exec.source,
-                range: exec.statement(&self.sources).range,
+                text: String::from_utf8_lossy(exec.text()).into(),
             })
             .collect();
 

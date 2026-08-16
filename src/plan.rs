@@ -111,10 +111,10 @@ pub enum SessionDiagnostic {
     /// 실행은 버려지고, 오염 상계가 같은 것이 여럿이면 가장 나중 것만 남는다 —
     /// 앞엣것을 실어도 가리키는 오염이 같기 때문이다.
     ///
-    /// 이 실행은 입력 소스가 아니라 **세션이 과거에 받은 소스**에 있다. 그래서
-    /// `source`([`SessionHistory::sources`](crate::SessionHistory::sources)의
-    /// 인덱스)와 `range`(그 소스의 바이트열 기준)가 함께 있어야 위치를 짚을 수 있다.
-    OpaqueResidue { source: usize, range: Range },
+    /// 이 실행은 입력 소스가 아니라 **세션이 과거에 받은 소스**에 있다. 세션은
+    /// 그 소스를 더는 들고 있지 않을 수 있으므로 위치 대신 statement 원문을 직접
+    /// 싣는다 — 사용자에게 보여줄 것이 곧 이것이다.
+    OpaqueResidue { text: Box<str> },
 }
 
 /// statement 하나에 대한 주석.

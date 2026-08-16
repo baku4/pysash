@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use super::disturbance::residue_entries;
-use super::source::PythonSource;
 use super::statement::Statement;
 use super::summaries::SummaryTable;
 use super::trace::ExecRef;
@@ -33,12 +32,7 @@ use super::trace::ExecRef;
 ///
 /// 버리는 것은 실행 참조뿐이다. def-use 그래프와 요약 표는 그대로 둔다 — 그쪽은
 /// `produces`를 넓히는 재료이고, 지우면 상계가 좁아져 잘못된 재사용이 된다.
-pub fn forget_inert(
-    residue: &mut Vec<ExecRef>,
-    realized: &[ExecRef],
-    sources: &[PythonSource],
-    summaries: &SummaryTable,
-) {
+pub fn forget_inert(residue: &mut Vec<ExecRef>, realized: &[ExecRef], summaries: &SummaryTable) {
     // 판정 대상이 될 수 있는 가장 앞선 순번. 실현 열이 비어 있으면 재사용의 근거로
     // 삼을 실행이 아예 없으므로 실현 밖 열 전체가 죽은 기록이다.
     let Some(floor) = realized.iter().map(|exec| exec.seq).min() else {
@@ -48,7 +42,7 @@ pub fn forget_inert(
 
     let outside: Vec<(usize, &Statement)> = residue
         .iter()
-        .map(|exec| (exec.seq, exec.statement(sources)))
+        .map(|exec| (exec.seq, exec.statement()))
         .collect();
     let entries = residue_entries(&outside, summaries);
 
@@ -121,9 +115,7 @@ mod tests {
             .realized
             .iter()
             .map(|exec| {
-                let source = &history.sources[exec.source];
-                let slice = source.slice(exec.statement(&history.sources).range);
-                let text = str::from_utf8(slice).expect("statement 경계는 문자 경계다");
+                let text = str::from_utf8(exec.text()).expect("statement 경계는 문자 경계다");
                 format!("{text}\n")
             })
             .collect();
@@ -173,11 +165,10 @@ mod tests {
                     _ => {
                         compacted.record_partial(&code);
                         // record_partial이 실현 밖에 붙인 것.
-                        let at = full.sources.len();
                         let first = full.executions;
                         full.record_partial(&code);
                         let added = (0..code.statements().len()).map(|index| ExecRef {
-                            source: at,
+                            source: code.clone(),
                             index,
                             seq: first + index,
                         });
@@ -201,4 +192,39 @@ mod tests {
         history.record_partial(&PythonSource::parse("x = 1\n").expect("valid python"));
         assert_eq!(history.residue_count(), 0);
     }
+
+    /// **잊힌 실행의 소스는 세션에서 사라진다.**
+    ///
+    /// 실행이 소스를 직접 소유하므로 따로 확인할 목록이 없다 — 어떤 실행에서도
+    /// 닿을 수 없는 소스가 곧 해제된 소스다. 한 줄을 고쳐 가며 편집 루프를 오래
+    /// 돌려도 세션이 붙들고 있는 서로 다른 소스의 수는 자라지 않아야 한다.
+    /// 옛 소스 목록을 따로 들던 때에는 이 수가 편집 횟수만큼 자랐다.
+    #[test]
+    fn forgotten_executions_release_their_sources() {
+        let mut history = SessionHistory::new();
+        history.push(&PythonSource::parse("import os\nbase = 1\n").unwrap());
+
+        let held_sources = |history: &SessionHistory| {
+            let mut raws: Vec<*const u8> = history
+                .realized
+                .iter()
+                .chain(&history.residue)
+                .map(|exec| exec.source.raw().as_ptr())
+                .collect();
+            raws.sort_unstable();
+            raws.dedup();
+            raws.len()
+        };
+
+        let mut peak = 0;
+        for i in 0..50 {
+            let code = PythonSource::parse(&format!("import os\nbase = 1\nx = {i}\n")).unwrap();
+            history.realize(&code);
+            peak = peak.max(held_sources(&history));
+        }
+        // 실현 열의 소스(현재 문서 + 재사용된 첫 소스)와 판정에 남은 residue의
+        // 소스 몇 개. 편집 50회분이 전부 남았다면 50을 넘는다.
+        assert!(peak <= 4, "세션이 붙든 소스가 편집 횟수를 따라 자란다: {peak}");
+    }
+
 }

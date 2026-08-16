@@ -84,15 +84,11 @@ mod summaries;
 /// 어디까지 돌았는지 모르는 실행은 [`record_partial`](Self::record_partial)이 받는다.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct SessionHistory {
-    /// 입력된 소스가 순서대로. 각 소스가 자기 statement를 들고 있으므로 이 하나가
-    /// 곧 `SessionHistory → PythonSource → statement` 트리다.
-    ///
-    /// statement만 떼어 이어 붙이면 "어느 소스의 몇 번째"가 사라지고, 원문을
-    /// 잘라볼 대상도 함께 사라진다. `PythonSource`는 전부 `Arc` 백업이라 보관
-    /// 비용이 O(1)이다.
-    sources: Vec<source::PythonSource>,
     /// 현재 "실현된" 선형 실행 열. 마지막 align의 소스를 그대로 실행한 상태라고
     /// 세션이 믿는 구간이다.
+    ///
+    /// 각 실행이 자기 소스를 직접 소유하므로 세션은 소스 목록을 따로 들지 않는다.
+    /// 어떤 실행도 가리키지 않게 된 소스는 그 자리에서 해제된다.
     realized: Vec<trace::ExecRef>,
     /// 실현 열 밖의 실행들 — 밀려난 옛 실행과 중간에 끊긴 실행. 효과는 남아
     /// 있지만 더 이상 어떤 소스의 실행으로도 세지 않는다. 오염 집합의 재료다.

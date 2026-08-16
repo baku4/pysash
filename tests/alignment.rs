@@ -217,12 +217,12 @@ fn reflective_residue_runs_everything() {
     let plan = history.align(&source(code));
     assert!(plan.steps.iter().all(|p| p.action == Run));
 
-    // 반사적 구문은 입력 소스가 아니라 세션이 과거에 받은 소스에 있다 — source
-    // 인덱스가 함께 와야 원문을 짚을 수 있다.
-    let Some(SessionDiagnostic::OpaqueResidue { source, range }) = plan.diagnostics.first() else {
+    // 반사적 구문은 입력 소스가 아니라 세션이 과거에 받은 소스에 있다 — 그 소스를
+    // 세션이 더는 들고 있지 않을 수 있으므로 원문이 직접 실려 온다.
+    let Some(SessionDiagnostic::OpaqueResidue { text }) = plan.diagnostics.first() else {
         panic!("반사적 구문이 실현 밖에 있다");
     };
-    assert_eq!(history.sources()[*source].slice(*range), b"builtins.len = str");
+    assert_eq!(&**text, "builtins.len = str");
 }
 
 #[test]
@@ -428,13 +428,10 @@ fn pushes_concatenate_into_one_linear_trace() {
 }
 
 #[test]
-fn the_session_keeps_each_source_it_was_given() {
+fn pushes_from_several_sources_form_one_realized_sequence() {
     let history = session(&["import os\n", "x = 1\ny = 2\n"]);
-    assert_eq!(history.sources().len(), 2);
-    assert_eq!(history.sources()[0].statements().len(), 1);
-    assert_eq!(history.sources()[1].statements().len(), 2);
-    assert_eq!(history.sources()[0].raw(), b"import os\n");
     assert_eq!(history.statement_count(), 3);
+    assert!(nothing_to_run(&history, "import os\nx = 1\ny = 2\n"));
 }
 
 #[test]

@@ -1,15 +1,17 @@
 use super::source::PythonSource;
 use super::statement::Statement;
 
-/// 실행 하나가 어느 소스의 몇 번째 statement였고, 세션 전체에서 몇 번째로
+/// 실행 하나 — 어느 소스의 몇 번째 statement였고, 세션 전체에서 몇 번째로
 /// 실행되었는지.
 ///
-/// 세션은 소스를 통째로 보관하므로, 실행 열은 이 참조의 나열로 충분하다.
-/// `SessionHistory → PythonSource → statement` 트리가 이걸로 보존된다.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// 소스를 **직접 소유한다** (`PythonSource`는 전부 `Arc` 백업이라 clone이 O(1)).
+/// 세션이 소스 목록을 따로 들고 위치로 가리키면, 죽은 소스를 버릴 때 뒤 위치가
+/// 전부 밀려 참조가 다른 소스를 가리킨다. 실행이 소스를 들면 실행을 버리는 순간
+/// 그 소스의 마지막 소유가 풀려 저절로 해제된다 — 별도의 정리가 필요 없다.
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ExecRef {
-    /// 세션에 입력된 몇 번째 소스인가.
-    pub source: usize,
+    /// 이 실행이 속한 소스.
+    pub source: PythonSource,
     /// 그 소스 안에서 몇 번째 statement인가.
     pub index: usize,
     /// 세션 전체에서 몇 번째 실행인가. 실현 열이 재배열되어도 실제로 일어난
@@ -19,7 +21,12 @@ pub struct ExecRef {
 
 impl ExecRef {
     /// 이 실행이 실행한 statement.
-    pub fn statement<'a>(&self, sources: &'a [PythonSource]) -> &'a Statement {
-        &sources[self.source].statements()[self.index]
+    pub fn statement(&self) -> &Statement {
+        &self.source.statements()[self.index]
+    }
+
+    /// 이 실행이 실행한 statement의 원문.
+    pub fn text(&self) -> &[u8] {
+        self.source.slice(self.statement().range)
     }
 }
