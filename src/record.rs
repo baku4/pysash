@@ -29,6 +29,10 @@ impl SessionHistory {
     /// 이제 이 소스가 실현 열이 된다 — 실현 밖으로 밀려난 옛 실행들은 residue로
     /// 옮겨져 오염 계산의 재료로 남는다. plan을 인자로 받지 않고 내부에서 같은
     /// 판정을 다시 계산하므로, 위조된 plan이 세션을 오염시키는 경로가 없다.
+    ///
+    /// 어떤 판정에도 닿을 수 없게 된 실행은 여기서 세션이 놓는다. 그래서 편집
+    /// 루프를 반복해도 실현 밖 실행이 자라기만 하지 않는다 — 어떤 statement의
+    /// [`plan::Action`](crate::plan::Action)도 그것 때문에 바뀌지 않는다.
     pub fn realize(&mut self, code: &PythonSource) {
         // 호출자가 본 것과 같은 계획. align은 순수하므로 결과가 같다.
         let plan = self.align(code);
@@ -81,6 +85,10 @@ impl SessionHistory {
     /// 완주한 부분이 있으면 그쪽을 [`push`](Self::push)나
     /// [`realize`](Self::realize)로 **먼저** 기록한다. 끊긴 실행이 뒤 순번을 받아야
     /// 오염이 시간을 거스르지 않는다.
+    ///
+    /// [`realize`](Self::realize)와 마찬가지로 닿을 수 없게 된 실행은 여기서
+    /// 놓는다. 실현 열이 비어 있으면 재사용의 근거로 삼을 실행이 아예 없으므로,
+    /// 방금 넣은 것을 포함해 실현 밖 실행 전체가 그 자리에서 버려진다.
     pub fn record_partial(&mut self, code: &PythonSource) {
         let source = self.sources.len();
         self.sources.push(code.clone());
