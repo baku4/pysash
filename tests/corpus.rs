@@ -14,7 +14,7 @@ mod support;
 use pysash::SessionHistory;
 use pysash::plan::Action;
 use pysash::source::PythonSource;
-use support::{actions, append_probe, corpus, head, insert_probe, realized};
+use support::{actions, append_probe, corpus, head, insert_probe, nth, realized};
 use Action::{Reuse, Run};
 
 /// 삽입 지점을 코퍼스 크기에 맞춰 고른다 — 맨 앞, 앞쪽, 가운데, 맨 뒤.
@@ -246,6 +246,36 @@ fn going_back_and_forth_between_two_versions_stays_sharp() {
         }
 
         assert_eq!(history.statement_count(), second.statements().len());
+    }
+}
+
+/// 마지막 statement가 끊긴 세션. 끊긴 실행은 실현 열에 없으므로 그 자리는 반드시
+/// 다시 돌고, 고쳐서 끝까지 돌리면 그 자리에서 수렴한다 — 끊긴 실행은 세션을
+/// 영구히 못 쓰게 만들지 않는다.
+#[test]
+fn an_interrupted_last_statement_still_converges() {
+    for fixture in corpus() {
+        let total = fixture.source.statements().len();
+        if total < 2 {
+            continue;
+        }
+
+        let mut history = SessionHistory::new();
+        history.realize(&head(&fixture.source, total - 1));
+        history.record_partial(&nth(&fixture.source, total - 1));
+
+        let plan = history.align(&fixture.source);
+        assert_eq!(plan.steps[total - 1].action, Run, "{}", fixture.name);
+        assert_eq!(plan.residue_len, 1, "{}", fixture.name);
+
+        history.realize(&fixture.source);
+        let plan = history.align(&fixture.source);
+        assert!(
+            plan.run_steps().next().is_none(),
+            "{}: 수렴하지 않았다 {}",
+            fixture.name,
+            actions(&plan)
+        );
     }
 }
 

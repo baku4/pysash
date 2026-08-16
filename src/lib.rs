@@ -76,11 +76,12 @@ mod trace;
 mod def_use;
 mod summaries;
 
-/// 지금까지 성공적으로 실행된 것의 선형 기록.
+/// 지금까지 세션에서 일어난 실행의 선형 기록.
 ///
 /// Python이나 IPython REPL에 입력하듯 [`PythonSource`](source::PythonSource)를
-/// 순서대로 밀어 넣는다. **들어오는 소스는 성공한 실행이어야 한다** — 검증하지 않는
-/// 계약이다.
+/// 순서대로 밀어 넣는다. **[`push`](Self::push)와 [`realize`](Self::realize)로
+/// 들어오는 소스는 성공한 실행이어야 한다** — 검증하지 않는 계약이다. 중간에 끊겨
+/// 어디까지 돌았는지 모르는 실행은 [`record_partial`](Self::record_partial)이 받는다.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct SessionHistory {
     /// 입력된 소스가 순서대로. 각 소스가 자기 statement를 들고 있으므로 이 하나가
@@ -93,8 +94,8 @@ pub struct SessionHistory {
     /// 현재 "실현된" 선형 실행 열. 마지막 align의 소스를 그대로 실행한 상태라고
     /// 세션이 믿는 구간이다.
     realized: Vec<trace::ExecRef>,
-    /// 실현 열 밖으로 밀려난 실행들. 효과는 남아 있지만 더 이상 어떤 소스의
-    /// 실행으로도 세지 않는다. 오염 집합의 재료다.
+    /// 실현 열 밖의 실행들 — 밀려난 옛 실행과 중간에 끊긴 실행. 효과는 남아
+    /// 있지만 더 이상 어떤 소스의 실행으로도 세지 않는다. 오염 집합의 재료다.
     residue: Vec<trace::ExecRef>,
     /// 이름 사이의 연결 — 살아 있는 이름과 별칭 클래스.
     graph: def_use::DefUseGraph,
@@ -103,7 +104,7 @@ pub struct SessionHistory {
     /// 지금까지 기록된 실행의 수. 실행 순번(seq) 발급기다 — realize가 실현 열을
     /// 교체해도 순번은 절대 되돌아가지 않는다.
     executions: usize,
-    /// 부분 실행 등으로 세션 상태를 더는 신뢰할 수 없다.
+    /// 세션에 무슨 일이 있었는지 알 수 없다. 켜지면 이후 모든 정렬이 전면 Run이다.
     poisoned: bool,
 }
 

@@ -13,7 +13,7 @@ mod support;
 
 use pysash::SessionHistory;
 use pysash::plan::{DecisionReason, Effect, SessionDiagnostic, StatementDiagnostic};
-use support::{actions, explain, has_diagnostic, realized, reasons, step};
+use support::{actions, explain, has_diagnostic, head, nth, realized, reasons, step};
 
 const BASE: &str = "01_base.py";
 
@@ -229,9 +229,9 @@ fn the_caller_can_downgrade_from_the_external_read() {
     assert_eq!(plan.steps[6].reason, DecisionReason::ReusableExecution);
 }
 
-/// 실행이 중간에 실패해 세션을 더는 믿을 수 없으면 이후는 전부 Run이다.
+/// 세션에 무슨 일이 있었는지 아예 모르면 이후는 전부 Run이다.
 #[test]
-fn a_failed_run_poisons_the_session_for_good() {
+fn a_poisoned_session_runs_everything_for_good() {
     let base = step("contig_qc", BASE);
     let mut history = realized(&base);
     history.poison();
@@ -241,6 +241,45 @@ fn a_failed_run_poisons_the_session_for_good() {
     assert!(reasons(&plan)
         .iter()
         .all(|reason| *reason == DecisionReason::NoMatchingExecution));
+}
+
+/// **커널이 셀 7에서 죽었다.** 셀 0..6은 완주했고, 셀 7은 어디까지 돌았는지 모른다 —
+/// IPython은 셀 소스를 통째로 받아 돌리고 실패 지점을 주지 않는다.
+///
+/// 완주한 것은 `realize`로, 끊긴 셀은 `record_partial`로 남긴다. 끊긴 셀이 다시
+/// 바인딩했을 수 있는 이름은 `kept_df` 하나뿐이고 위쪽 셀은 아무도 그 이름을 만들지
+/// 않는다 — `pd.read_csv(...)`를 포함한 일곱 개가 전부 살아남는다.
+#[test]
+fn an_interrupted_cell_costs_only_what_it_could_have_touched() {
+    let base = step("contig_qc", BASE);
+    let mut history = SessionHistory::new();
+    history.realize(&head(&base, 7));
+    history.record_partial(&nth(&base, 7));
+
+    let plan = history.align(&base);
+    assert_eq!(actions(&plan), ".......XXX", "{}", explain(&plan, &base));
+    assert_eq!(plan.prefix_len, 7);
+    assert_eq!(plan.residue_len, 1);
+    assert_eq!(history.residue_count(), 1);
+    // 끊긴 셀은 실현 열에 없다 — 그 자리의 실행으로 셀 근거가 아무것도 없다.
+    assert_eq!(plan.steps[7].reason, DecisionReason::NoMatchingExecution);
+
+    // 고쳐서 끝까지 돌리면 그 자리에서 수렴한다. 끊긴 실행이 남긴 오염은 그보다 뒤
+    // 순번을 받은 새 실행을 건드리지 못한다.
+    history.realize(&base);
+    assert!(history.align(&base).run_steps().next().is_none());
+}
+
+/// 같은 실패를 `poison()`으로 처리하면 위쪽 일곱 개까지 함께 죽는다. 이것이
+/// `record_partial`이 사는 값의 차이다 — 오타 한 번에 `pd.read_csv(...)`가 다시 돈다.
+#[test]
+fn poisoning_the_same_failure_throws_away_the_whole_session() {
+    let base = step("contig_qc", BASE);
+    let mut history = SessionHistory::new();
+    history.realize(&head(&base, 7));
+    history.poison();
+
+    assert_eq!(actions(&history.align(&base)), "XXXXXXXXXX");
 }
 
 /// 자기 안에서 전부 바인딩되는 소스에는 statement 주석이 붙지 않는다.

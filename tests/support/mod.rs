@@ -106,6 +106,16 @@ pub fn head(source: &PythonSource, count: usize) -> PythonSource {
     PythonSource::parse_bytes(&source.raw()[..end]).expect("statement 경계에서 자른 소스")
 }
 
+/// `index` 자리의 statement 하나만 떼어 낸 소스.
+///
+/// 셸이 셀 하나를 커널에 보낼 때 넘기는 바로 그 조각이다 — 끊긴 실행을 기록할 때
+/// 필요하다. 잘라낸 조각이 같은 statement로 다시 파싱된다는 것은 `tests/corpus.rs`가
+/// 코퍼스 전체에 대해 확인한다.
+pub fn nth(source: &PythonSource, index: usize) -> PythonSource {
+    let range = source.statements()[index].range;
+    PythonSource::parse_bytes(source.slice(range)).expect("statement 하나는 그대로 파싱된다")
+}
+
 /// `index` 자리에 새 statement 한 줄을 끼워 넣은 소스.
 ///
 /// 어떤 코드든 안전하게 "중간을 고친" 판본을 만들 수 있는 유일한 편집이다 —

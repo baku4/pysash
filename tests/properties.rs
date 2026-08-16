@@ -68,4 +68,39 @@ proptest! {
         let code = PythonSource::parse(&incoming.concat()).expect("valid");
         prop_assert_eq!(history.align(&code), history.align(&code));
     }
+
+    /// 끊긴 실행을 기록하면 재사용은 줄어들 수만 있다. 실제로 돈 것보다 넓게
+    /// 기록하는 방향이므로 오염 상계가 넓어질 뿐 좁아지지 않는다.
+    #[test]
+    fn recording_an_interruption_never_adds_reuse(
+        pushed in statements(),
+        interrupted in statements(),
+        incoming in statements(),
+    ) {
+        let mut history = session(&pushed);
+        let code = PythonSource::parse(&incoming.concat()).expect("valid");
+        let before = history.align(&code).summary().reused;
+
+        history.record_partial(&PythonSource::parse(&interrupted.concat()).expect("valid"));
+        prop_assert!(history.align(&code).summary().reused <= before);
+    }
+
+    /// 끊긴 실행을 기록한 뒤에도 편집 루프는 한 번의 realize로 수렴한다.
+    #[test]
+    fn realize_converges_after_an_interruption(
+        pushed in statements(),
+        interrupted in statements(),
+        incoming in statements(),
+    ) {
+        let mut history = session(&pushed);
+        history.record_partial(&PythonSource::parse(&interrupted.concat()).expect("valid"));
+        let code = PythonSource::parse(&incoming.concat()).expect("valid");
+        history.realize(&code);
+        let plan = history.align(&code);
+        prop_assert!(
+            plan.run_steps().next().is_none(),
+            "not converged: {:?}",
+            plan.steps.iter().map(|p| p.action).collect::<Vec<_>>()
+        );
+    }
 }

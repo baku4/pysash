@@ -246,6 +246,58 @@ fn poison_runs_everything_forever() {
     );
 }
 
+/// 어디까지 돌았는지 모르는 실행 — 아는 만큼만 버린다.
+
+#[test]
+fn an_interrupted_source_disturbs_what_it_might_have_bound() {
+    // 인터프리터의 x는 1일 수도 2일 수도 있다. 어느 쪽이든 x = 1의 실행을 그 자리의
+    // 실행으로 셀 수 없다 — 완주한 prefix만 realize하고 끝내면 조용히 틀린다.
+    let mut history = SessionHistory::new();
+    history.realize(&source("x = 1\n"));
+    history.record_partial(&source("x = 2\nboom()\n"));
+
+    let code = "x = 1\ny = x\n";
+    assert_eq!(actions(&history, code), [Run, Run]);
+    assert_eq!(
+        reasons(&history, code)[0],
+        DecisionReason::BindingChanged { name: "x".into() }
+    );
+}
+
+#[test]
+fn an_interrupted_source_leaves_untouched_names_reusable() {
+    // poison과 갈리는 자리다 — 끊긴 소스가 건드리지 않은 이름의 재사용은 살아남는다.
+    let mut history = SessionHistory::new();
+    history.realize(&source("import os\nbig = [1, 2, 3]\n"));
+    history.record_partial(&source("total = 0\nboom()\n"));
+    assert_eq!(
+        actions(&history, "import os\nbig = [1, 2, 3]\nn = 3\n"),
+        [Reuse, Reuse, Run]
+    );
+}
+
+#[test]
+fn an_interrupted_source_is_never_itself_reused() {
+    // residue에 있는 실행은 실현 열에 없다. 같은 소스를 그대로 다시 줘도 전부 Run이다.
+    let mut history = SessionHistory::new();
+    history.record_partial(&source("x = 1\ny = x\n"));
+    assert_eq!(actions(&history, "x = 1\ny = x\n"), [Run, Run]);
+    assert_eq!(history.statement_count(), 0);
+    assert_eq!(history.residue_count(), 2);
+}
+
+#[test]
+fn an_interrupted_run_converges_once_it_is_fixed() {
+    // 영구히 못 쓰게 되는 세션은 poison뿐이다.
+    let mut history = SessionHistory::new();
+    history.realize(&source("x = 1\n"));
+    history.record_partial(&source("x = 2\nboom()\n"));
+
+    let fixed = source("x = 1\nx = 2\ny = x\n");
+    history.realize(&fixed);
+    assert!(nothing_to_run(&history, "x = 1\nx = 2\ny = x\n"));
+}
+
 /// 편집 루프 — 실행하고 realize하면 그 자리에서 수렴한다.
 
 #[test]
@@ -284,6 +336,28 @@ fn disturbed_prefix_runs_converge_after_realize() {
     );
     history.realize(&code);
     assert!(nothing_to_run(&history, "K = 10\ndef f():\n    return K * 2\ny = f()\n"));
+}
+
+#[test]
+fn a_rerun_definition_replaces_the_stale_summary() {
+    // 다시 실행된 def를 새 순번으로 기록하지 않으면, 사이에 끼어든 옛 재정의가 그
+    // 뒤의 f() 호출에 그대로 남아 "f()는 c를 쓴다"는 사실이 사라진다.
+    let mut history = session(&[
+        "def f():\n    global c\n    c = 1\n",
+        "c = 0\n",
+        "def f():\n    pass\n",
+    ]);
+    let restored = source("def f():\n    global c\n    c = 1\nc = 0\nf()\n");
+    history.realize(&restored); // 첫 def가 그 자리에서 다시 실행된다
+    history.push(&source("c = 99\n"));
+
+    // 실측: f()가 만든 c를 c = 99가 덮었다. f()를 재사용하면 z가 1이 아니라 0이 된다.
+    let code = "def f():\n    global c\n    c = 1\nc = 0\nf()\nz = c\n";
+    assert_eq!(actions(&history, code), [Reuse, Run, Run, Run]);
+    assert_eq!(
+        reasons(&history, code)[2],
+        DecisionReason::BindingChanged { name: "c".into() }
+    );
 }
 
 #[test]
