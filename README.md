@@ -31,6 +31,24 @@ extra `Run` steps.
 - Partial reuse inside a compound statement; a loop or function definition is one statement.
 - Persistent histories, fork, and rewind.
 
+## Python syntax
+
+PySASH accepts what CPython's `ast.parse` accepts, not what `compile` accepts. Grammatical
+source that no interpreter would run, such as `return` outside a function or a duplicate
+parameter, still becomes statements; the session fails to execute them, records nothing, and
+alignment reaches `Run`.
+
+The grammar spans every construct CPython added through 3.14 plus the 3.15 syntax already in
+preview, and does not gate on a target version: source a session's interpreter would reject
+still parses. The two directions are not symmetric, because rejecting syntax the session can
+execute makes the tool unusable, while accepting syntax it cannot execute only costs an extra
+`Run`.
+
+Coverage comes entirely from the pinned Ruff parser.
+[`tests/python_syntax.rs`](tests/python_syntax.rs) records it along three axes — the release
+that changed each construct, every reachable AST node kind, and grammatical source no
+interpreter will run — and fails when the pin changes any of them.
+
 ## MSRV
 
 The MSRV follows near-current stable Rust because the Ruff parser crates are pinned exactly.
